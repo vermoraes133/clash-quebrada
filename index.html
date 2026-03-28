@@ -7,6 +7,7 @@ a<!DOCTYPE html>
 <!-- Firebase Realtime Database (online multiplayer) -->
 <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-database-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-auth-compat.js"></script>
 <style>
 * { margin:0; padding:0; box-sizing:border-box; }
 body {
@@ -46,6 +47,28 @@ body {
 #login button:active { transform:scale(.97); }
 #login .err { color:#e74c3c; font-size:.85rem; min-height:18px; }
 #login .already { color:#aaa; font-size:.8rem; cursor:pointer; text-decoration:underline; }
+#login .login-toggle { color:#3498db; font-size:.82rem; cursor:pointer; text-decoration:underline; }
+
+/* ── Feedback overlay ── */
+#feedbackOverlay {
+  position:fixed; inset:0;
+  background:rgba(0,0,0,.88);
+  display:none; flex-direction:column; align-items:center; justify-content:center;
+  gap:14px; z-index:200; padding:20px;
+}
+#feedbackOverlay.show { display:flex; }
+#feedbackOverlay h2 { color:#f1c40f; font-size:1.5rem; text-shadow:0 0 16px #f1c40f55; }
+#feedbackOverlay p { color:#aaa; font-size:.9rem; margin-top:-6px; text-align:center; }
+.fb-stars { display:flex; gap:10px; cursor:pointer; }
+.fb-stars span { font-size:2.2rem; filter:grayscale(1) brightness(.6); transition:filter .15s; user-select:none; }
+.fb-stars span.lit { filter:none; }
+#fbText { width:min(320px,90vw); height:80px; border-radius:10px; border:1.5px solid #333;
+  background:#111; color:#fff; font-size:.9rem; padding:10px; resize:none; outline:none; }
+#fbText:focus { border-color:#f1c40f44; }
+.fb-btns { display:flex; gap:12px; }
+.fb-btns button { padding:12px 28px; border-radius:10px; border:none; font-size:1rem; font-weight:700; cursor:pointer; }
+#btnFbSend { background:linear-gradient(135deg,#e67e22,#e74c3c); color:#fff; box-shadow:0 4px 16px #e74c3c44; }
+#btnFbSkip { background:rgba(255,255,255,.08); color:#888; }
 
 /* ── Sala de Desafios overlay ── */
 #matchlobby {
@@ -206,11 +229,27 @@ body {
 
 <div id="login">
   <h1>⚔️ Clash Quebrada</h1>
-  <p>O jogo da quebrada — entre e bata no inimigo!</p>
-  <input id="iName"  type="text"  placeholder="Seu apelido de guerreiro" maxlength="18">
-  <input id="iEmail" type="email" placeholder="Email (para salvar progresso)" maxlength="50">
+  <p id="loginSub">O jogo da quebrada — entre e bata no inimigo!</p>
+  <input id="iName"  type="text"     placeholder="Seu apelido de guerreiro" maxlength="18">
+  <input id="iEmail" type="email"    placeholder="Email" maxlength="50">
+  <input id="iPass"  type="password" placeholder="Senha (mín. 6 caracteres)" maxlength="72">
   <button id="btnEnter">Entrar na Batalha! 🔥</button>
   <div class="err" id="loginErr"></div>
+  <span class="login-toggle" id="btnToggleMode">Primeira vez? Criar conta</span>
+</div>
+
+<!-- ── Feedback overlay ── -->
+<div id="feedbackOverlay">
+  <h2>💬 Feedback do Jogo</h2>
+  <p>Como foi essa partida? Sua opinião melhora o jogo!</p>
+  <div class="fb-stars" id="fbStars">
+    <span data-v="1">⭐</span><span data-v="2">⭐</span><span data-v="3">⭐</span><span data-v="4">⭐</span><span data-v="5">⭐</span>
+  </div>
+  <textarea id="fbText" placeholder="Sugestões, bugs, elogios... (opcional)" maxlength="300"></textarea>
+  <div class="fb-btns">
+    <button id="btnFbSend">Enviar 📨</button>
+    <button id="btnFbSkip">Pular →</button>
+  </div>
 </div>
 
 <!-- ── Sala de Desafios ── -->
@@ -577,13 +616,15 @@ const CARDS = {
   cientista:        { name:'Cientista',        cost:5, emoji:'🔬', desc:'Ácido em área — dissolve qualquer um', hp:310, dmg:148, spd:50,  range:130, atkRate:0.7,  r:14, type:'ranged', color:'#00838f', special:'gas',   gasR:65,   gasDmg:48, shopCost:6,  locked:true },
   influencer:       { name:'Influencer',       cost:3, emoji:'📱', desc:'Live viral — atordoa inimigos em área', hp:190, dmg:58,  spd:66,  range:125, atkRate:0.8,  r:12, type:'ranged', color:'#e91e63', special:'sonic', sonicR:65,  stunDur:0.7, shopCost:4,  locked:true },
   diretor_producao: { name:'Diretor de Produção', cost:10, emoji:'🎬', desc:'Lendário! Imbatível — vale 3 rodadas', hp:8000, dmg:480, spd:140, range:38, atkRate:0.5, r:26, type:'melee', color:'#ffd700', prio:'building', special:'stun', stunDur:0.9, stunChance:0.65, shopCost:50, locked:true, deckAdvance:3, legendary:true },
+  ladrao:           { name:'Ladrão',             cost:4,  emoji:'🦹', desc:'Vampiro — cada golpe drena HP do alvo', hp:350, dmg:72, spd:92, range:25, atkRate:1.1, r:14, type:'melee', color:'#4a148c', special:'drain', drainPct:0.45 },
+  ze_pelintra:      { name:'Zé Pelintra',        cost:8,  emoji:'🕺', desc:'Lendário — teleporta, cura e é quase indestrutível', hp:5500, dmg:240, spd:125, range:30, atkRate:0.85, r:22, type:'melee', color:'#7b1fa2', special:'pilintra', healR:115, healAmt:80, dodgeChance:0.28, shopCost:40, locked:true, legendary:true },
 };
 
 const SHOP_CARD_KEYS = [
   'medico','advogado','engenheiro','garcom','motorista_onibus','cantor',
   'ator','pedreiro','faxineiro','encanador','veterinario','seguranca',
   'corretor','nutricionista','mecanico','carpinteiro','piloto','cientista',
-  'influencer','diretor_producao'
+  'influencer','diretor_producao','ze_pelintra'
 ];
 const BASE_KEYS = Object.keys(CARDS).filter(k=>!CARDS[k].locked);
 // ALL_KEYS includes base + owned shop cards
@@ -618,12 +659,14 @@ const FIREBASE_CONFIG = {
 let _db=null, _roomId=null, _myRole=null, _opponentName='Oponente';
 let _opponentDeck=[], _rematchPending=false;
 
+let _auth=null;
 function initFirebase(){
   if(_db)return true;
   if(!FIREBASE_CONFIG.databaseURL){showLobbyErr('Configure FIREBASE_CONFIG no código!');return false;}
   try{
     if(!firebase.apps.length) firebase.initializeApp(FIREBASE_CONFIG);
     _db=firebase.database();
+    try{_auth=firebase.auth();}catch(e){_auth=null;} // auth opcional
     return true;
   }catch(e){showLobbyErr('Erro Firebase: '+e.message);return false;}
 }
@@ -1053,12 +1096,32 @@ async function saveDifficultyConfig(diff){
   }catch(e){}
 }
 
+// Lista de admins locais (fallback se Firebase não responder)
+const ADMIN_EMAILS=['e@emoraesl.com'];
+
+function _setAdminDeck(){
+  const ADMIN_CARDS=['diretor_producao','ze_pelintra','seguranca','motorista_onibus','engenheiro','piloto','cientista','pedreiro'];
+  if(!APP.progress.owned)APP.progress.owned=[];
+  // Garante que admin possui todas as cartas especiais
+  ADMIN_CARDS.forEach(k=>{if(!APP.progress.owned.includes(k))APP.progress.owned.push(k);});
+  APP.progress.deck=[...ADMIN_CARDS];
+}
+
 // Verifica se o email logado é admin (/config/admins/{emailKey} = true)
 async function checkAdminAccess(){
-  if(!_db||!APP.account){APP.isAdmin=false;return false;}
+  if(!APP.account){APP.isAdmin=false;return false;}
+  // Verificação local imediata — garante acesso offline
+  if(ADMIN_EMAILS.includes(APP.account.email.toLowerCase().trim())){
+    APP.isAdmin=true;
+    _setAdminDeck();
+    return true;
+  }
+  // Verificação Firebase (admins adicionais cadastrados no DB)
+  if(!_db){APP.isAdmin=false;return false;}
   try{
     const snap=await _db.ref('config/admins/'+fbKey(APP.account.email)).once('value');
     APP.isAdmin=snap.val()===true;
+    if(APP.isAdmin)_setAdminDeck();
     return APP.isAdmin;
   }catch(e){ APP.isAdmin=false; return false; }
 }
@@ -1180,8 +1243,9 @@ function goScreen(s){
   APP.screen=s;
   if(s==='battle') MUSIC.start();
   if(s==='menu')   MUSIC.stop();
-  if(s==='shop')   shopScrollY=0;   // reset scroll ao entrar na loja
-  if(s==='ranking') fbLoadRanking(); // busca top-20 no Firebase
+  if(s==='shop')   shopScrollY=0;
+  if(s==='ranking') fbLoadRanking();
+  if(s==='result')  setTimeout(showFeedback, 3500); // feedback após resultado
 }
 
 // ════════════════════════════════════════════════════════════
@@ -1276,6 +1340,7 @@ function spawnUnit(key,x,y,team){
       sweepR:d.sweepR||0, slowR:d.slowR||0,
       slowF:d.slowF||1, slowDur:d.slowDur||0,
       pullDist:d.pullDist||0, dodgeChance:d.dodgeChance||0,
+      drainPct:d.drainPct||0,
       waypoints:[],
     });
   }
@@ -1371,6 +1436,28 @@ function applySpecial(unit,target){
     target.x+=Math.cos(a)*unit.pullDist*.3;
     target.y+=Math.sin(a)*unit.pullDist*.3;
     G.efx.push({x:target.x,y:target.y-16,life:.4,maxLife:.4,type:'text',txt:'🎣',color:'#00838f'});
+  }
+  if(sp==='drain'&&unit.drainPct>0){
+    // Rouba HP do alvo e transfere para si mesmo
+    const stolen=Math.floor(unit.dmg*unit.drainPct);
+    unit.hp=Math.min(unit.maxHp,unit.hp+stolen);
+    G.efx.push({x:target.x,y:target.y-16,life:.7,maxLife:.7,type:'text',txt:'-'+stolen+'❤',color:'#ce93d8'});
+    G.efx.push({x:unit.x,y:unit.y-16,life:.7,maxLife:.7,type:'text',txt:'+'+stolen+'❤',color:'#e91e63'});
+  }
+  if(sp==='pilintra'){
+    // Cura aliados próximos
+    G.units.filter(u=>u.alive&&u.team===ally&&dst(u,unit)<unit.healR).forEach(u=>{
+      u.hp=Math.min(u.maxHp,u.hp+unit.healAmt);
+      G.efx.push({x:u.x,y:u.y-18,life:.8,maxLife:.8,type:'text',txt:'+'+unit.healAmt,color:'#b39ddb'});
+    });
+    // Teleporte — avança ou recua aleatoriamente
+    const forward=Math.random()<0.65;
+    const dashDist=rand(60,130);
+    const dy=(unit.team==='player'?-1:1)*(forward?dashDist:-dashDist);
+    unit.y=Math.max(ARENA_TOP+unit.r,Math.min(ARENA_BOT-unit.r,unit.y+dy));
+    unit.x=Math.max(unit.r,Math.min(W-unit.r,unit.x+rnd(40)-20));
+    G.efx.push({x:unit.x,y:unit.y,r:42,life:.45,maxLife:.45,type:'sonic'});
+    G.efx.push({x:unit.x,y:unit.y-22,life:.9,maxLife:.9,type:'text',txt:'🕺',color:'#ce93d8'});
   }
 }
 
@@ -1891,11 +1978,9 @@ function drawHUD(){
     ctx.fillStyle='#f1c40f';ctx.font='9px Arial';ctx.textAlign='center';ctx.textBaseline='middle';
     ctx.fillText(dl,39,ARENA_TOP+13);
   }
-  // Botão desistir (🏳️) canto inferior esquerdo da arena
-  if(APP.mode==='solo'||APP.mode==='online'){
-    ctx.fillStyle='rgba(180,30,30,.8)';ctx.beginPath();ctx.roundRect(4,ARENA_BOT-26,28,22,5);ctx.fill();
-    ctx.font='14px Arial';ctx.textAlign='center';ctx.textBaseline='middle';ctx.fillText('🏳️',18,ARENA_BOT-15);
-  }
+  // Botão sair (🏳️) canto inferior esquerdo da arena — todos os modos
+  ctx.fillStyle='rgba(180,30,30,.8)';ctx.beginPath();ctx.roundRect(4,ARENA_BOT-26,28,22,5);ctx.fill();
+  ctx.font='14px Arial';ctx.textAlign='center';ctx.textBaseline='middle';ctx.fillText('🏳️',18,ARENA_BOT-15);
   // Confirmação de desistência
   if(G.showForfeitConfirm){
     ctx.fillStyle='rgba(0,0,0,.88)';ctx.beginPath();ctx.roundRect(W/2-130,H/2-60,260,120,12);ctx.fill();
@@ -2465,8 +2550,8 @@ function handleClick(mx,my){
       return;
     }
 
-    // Botão desistir (canto inferior esquerdo arena)
-    if((APP.mode==='solo'||APP.mode==='online')&&mx>=4&&mx<=32&&my>=ARENA_BOT-26&&my<=ARENA_BOT-4){
+    // Botão sair/desistir (canto inferior esquerdo arena) — todos os modos
+    if(mx>=4&&mx<=32&&my>=ARENA_BOT-26&&my<=ARENA_BOT-4){
       G.showForfeitConfirm=true;return;
     }
 
@@ -2576,22 +2661,59 @@ function startBattle(){
 }
 
 // ── Login HTML ─────────────────────────────────────────────
+let _loginMode='login'; // 'login' | 'register'
+
+document.getElementById('btnToggleMode').addEventListener('click',()=>{
+  _loginMode=_loginMode==='login'?'register':'login';
+  const isReg=_loginMode==='register';
+  document.getElementById('btnEnter').textContent=isReg?'Criar Conta 🎮':'Entrar na Batalha! 🔥';
+  document.getElementById('btnToggleMode').textContent=isReg?'Já tenho conta':'Primeira vez? Criar conta';
+  document.getElementById('loginSub').textContent=isReg?'Crie sua conta gratuita!':'O jogo da quebrada — entre e bata no inimigo!';
+  document.getElementById('loginErr').textContent='';
+});
+
 document.getElementById('btnEnter').addEventListener('click', async ()=>{
   const name=document.getElementById('iName').value.trim();
   const email=document.getElementById('iEmail').value.trim();
+  const pass=document.getElementById('iPass').value;
   const err=document.getElementById('loginErr');
   if(!name){err.textContent='Digite seu apelido!';return;}
   if(!email||!email.includes('@')){err.textContent='Email inválido!';return;}
+  if(!pass||pass.length<6){err.textContent='Senha deve ter no mínimo 6 caracteres!';return;}
 
   err.textContent='🔄 Verificando conta...';
   document.getElementById('btnEnter').disabled=true;
 
-  // 1) Tenta carregar do Firebase (progresso salvo em outros dispositivos)
   initFirebase();
-  const fbUser=await fbLoadAccount(email);
 
+  // 1) Autenticação Firebase Auth (email+senha)
+  if(_auth){
+    try{
+      if(_loginMode==='register'){
+        await _auth.createUserWithEmailAndPassword(email,pass);
+      }else{
+        await _auth.signInWithEmailAndPassword(email,pass);
+      }
+    }catch(authErr){
+      document.getElementById('btnEnter').disabled=false;
+      const c=authErr.code||'';
+      if(c==='auth/user-not-found')     {err.textContent='Conta não encontrada. Crie sua conta!';return;}
+      if(c==='auth/wrong-password')     {err.textContent='Senha incorreta!';return;}
+      if(c==='auth/email-already-in-use'){err.textContent='Email já cadastrado — faça login.';return;}
+      if(c==='auth/invalid-email')      {err.textContent='Email inválido!';return;}
+      if(c==='auth/weak-password')      {err.textContent='Senha muito fraca (mín. 6 caracteres)!';return;}
+      if(c==='auth/operation-not-allowed'){
+        // Auth não habilitado no Firebase Console — continua sem auth
+        console.warn('Firebase Auth não habilitado, continuando sem autenticação.');
+      } else if(c!=='auth/network-request-failed'){
+        err.textContent='Erro: '+authErr.message;return;
+      }
+    }
+  }
+
+  // 2) Carrega progresso do Firebase DB
+  const fbUser=await fbLoadAccount(email);
   if(fbUser){
-    // Conta encontrada no Firebase — carrega progresso completo
     APP.account={name:fbUser.name,email:fbUser.email,id:fbUser.id};
     APP.progress={
       trophies:fbUser.trophies||0, wins:fbUser.wins||0,
@@ -2602,7 +2724,7 @@ document.getElementById('btnEnter').addEventListener('click', async ()=>{
     };
     APP.ranking=[];
   }else{
-    // 2) Fallback: localStorage (offline ou Firebase não configurado)
+    // 3) Fallback: localStorage
     const saved=loadData();
     if(saved&&saved.account&&saved.account.email===email){
       APP.account=saved.account;
@@ -2617,9 +2739,8 @@ document.getElementById('btnEnter').addEventListener('click', async ()=>{
     }
   }
 
-  APP.account.name=name; // sempre usa o nome mais recente
+  APP.account.name=name;
 
-  // Verifica privilégio admin e carrega config de dificuldade em tempo real
   await checkAdminAccess();
   loadDifficultyConfig();
 
@@ -2630,7 +2751,8 @@ document.getElementById('btnEnter').addEventListener('click', async ()=>{
   requestAnimationFrame(frame);
 });
 document.getElementById('iName').addEventListener('keydown',e=>{if(e.key==='Enter')document.getElementById('iEmail').focus();});
-document.getElementById('iEmail').addEventListener('keydown',e=>{if(e.key==='Enter')document.getElementById('btnEnter').click();});
+document.getElementById('iEmail').addEventListener('keydown',e=>{if(e.key==='Enter')document.getElementById('iPass').focus();});
+document.getElementById('iPass').addEventListener('keydown',e=>{if(e.key==='Enter')document.getElementById('btnEnter').click();});
 
 // Pré-carregar dados se existirem (auto-login)
 (()=>{
@@ -2640,6 +2762,33 @@ document.getElementById('iEmail').addEventListener('keydown',e=>{if(e.key==='Ent
     document.getElementById('iEmail').value=saved.account.email||'';
   }
 })();
+
+// ── Feedback ────────────────────────────────────────────────
+let _fbRating=0;
+function showFeedback(){
+  _fbRating=0;
+  document.querySelectorAll('.fb-stars span').forEach(s=>s.classList.remove('lit'));
+  document.getElementById('fbText').value='';
+  document.getElementById('feedbackOverlay').classList.add('show');
+}
+function hideFeedback(){
+  document.getElementById('feedbackOverlay').classList.remove('show');
+}
+document.querySelectorAll('#fbStars span').forEach(s=>{
+  s.addEventListener('click',()=>{
+    _fbRating=parseInt(s.dataset.v);
+    document.querySelectorAll('#fbStars span').forEach(el=>{
+      el.classList.toggle('lit',parseInt(el.dataset.v)<=_fbRating);
+    });
+  });
+});
+document.getElementById('btnFbSend').addEventListener('click',async ()=>{
+  if(_fbRating===0){document.getElementById('feedbackOverlay').querySelector('p').style.color='#e74c3c';setTimeout(()=>{document.getElementById('feedbackOverlay').querySelector('p').style.color='';},1200);return;}
+  const fbData={rating:_fbRating,text:document.getElementById('fbText').value.trim(),name:APP.account?.name||'Anônimo',mode:APP.mode||'solo',result:APP.battleResult||'?',ts:Date.now()};
+  if(_db){try{await _db.ref('feedback').push(fbData);}catch(e){}}
+  hideFeedback();
+});
+document.getElementById('btnFbSkip').addEventListener('click',hideFeedback);
 </script>
 </body>
 </html>
