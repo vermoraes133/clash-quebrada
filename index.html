@@ -1461,7 +1461,7 @@ function dst(a,b){return Math.hypot(a.x-b.x,a.y-b.y);}
 // ════════════════════════════════════════════════════════════
 //  BATTLE STATE
 // ════════════════════════════════════════════════════════════
-let G={}, uid=0, lastTime=0, mouseX=0, mouseY=0;
+let G={}, uid=0, lastTime=0, mouseX=0, mouseY=0, _frameDt=0.016;
 
 function newBattle(p1DeckOverride, p2DeckOverride){
   const pd=p1DeckOverride?[...p1DeckOverride]:[...APP.progress.deck];
@@ -2149,6 +2149,7 @@ function drawProjectile(p){
       ctx.lineCap='round';
       ctx.beginPath();ctx.moveTo(p.trail[i-1].x,p.trail[i-1].y);ctx.lineTo(p.trail[i].x,p.trail[i].y);ctx.stroke();
     }
+    ctx.lineCap='butt'; // reset para não vazar no resto do canvas
   }
   // Núcleo brilhante
   ctx.shadowColor='rgba(255,220,60,1)';ctx.shadowBlur=p.isTower?16:10;
@@ -2705,7 +2706,7 @@ function drawBattle(){
   G.units.forEach(drawUnit);
   G.projs.forEach(drawProjectile);
   ctx.restore();
-  drawEffects(0.016);
+  drawEffects(_frameDt);
   drawHUD();
   drawP2UI();
   drawP1UI();
@@ -2714,7 +2715,7 @@ function drawBattle(){
 
 function frame(ts){
   const dt=Math.min((ts-lastTime)/1000,.1);
-  lastTime=ts;
+  lastTime=ts;_frameDt=dt;
   update(dt,ts);
   ctx.clearRect(0,0,W,H);
   if(APP.screen==='battle')      drawBattle();
