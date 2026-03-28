@@ -2784,32 +2784,43 @@ document.getElementById('btnEnter').addEventListener('click', async ()=>{
 
   initFirebase();
 
-  // 1) Firebase Auth — tenta login; se não existe, cria automaticamente
-  //    Se Auth não estiver configurado no Firebase, ignora e continua.
+  // 1) Firebase Auth — tenta login; se não existe, cria automaticamente.
+  //    Firebase SDK v10+ unifica auth/user-not-found + auth/wrong-password
+  //    em auth/invalid-credential. Estratégia: ao receber invalid-credential,
+  //    tentamos criar a conta; se falhar com email-already-in-use = senha errada.
   const _AUTH_BYPASS=['auth/operation-not-allowed','auth/configuration-not-found',
-                      'auth/network-request-failed','auth/internal-error'];
+                      'auth/network-request-failed','auth/internal-error',
+                      'auth/too-many-requests'];
   if(_auth){
     try{
       await _auth.signInWithEmailAndPassword(email,pass);
     }catch(authErr){
       const c=authErr.code||'';
-      if(c==='auth/user-not-found'){
-        // Conta não existe — cria automaticamente (primeira vez)
+      const needsCreate=c==='auth/user-not-found'||c==='auth/invalid-credential';
+      if(needsCreate){
+        // Pode ser usuário inexistente OU senha errada — tenta criar para descobrir
         try{
-          err.textContent='🆕 Criando sua conta...';
+          err.textContent='🆕 Verificando conta...';
           await _auth.createUserWithEmailAndPassword(email,pass);
+          // Sucesso → era conta nova, agora criada e logada
         }catch(regErr){
           const rc=regErr.code||'';
+          if(rc==='auth/email-already-in-use'){
+            // Conta existe → senha digitada está errada
+            document.getElementById('btnEnter').disabled=false;
+            err.textContent='❌ Senha incorreta!';return;
+          }
           if(rc==='auth/weak-password'){document.getElementById('btnEnter').disabled=false;err.textContent='Senha fraca (mín. 6 caracteres)!';return;}
           if(rc==='auth/invalid-email'){document.getElementById('btnEnter').disabled=false;err.textContent='Email inválido!';return;}
-          if(!_AUTH_BYPASS.includes(rc)){console.warn('Auth create aviso:',rc);}
-          // qualquer outro erro de Auth → continua sem auth (não bloqueia login)
+          if(_AUTH_BYPASS.includes(rc)||rc.startsWith('auth/')){
+            console.warn('Firebase Auth indisponível ('+rc+') — continuando sem auth.');
+          }else{console.warn('Auth create aviso:',rc);}
         }
       }else if(c==='auth/wrong-password'){
+        // Código legado (SDK < 10.6)
         document.getElementById('btnEnter').disabled=false;
         err.textContent='❌ Senha incorreta!';return;
       }else if(_AUTH_BYPASS.includes(c)||c.startsWith('auth/')){
-        // Auth não configurado, desabilitado ou erro temporário — continua sem auth
         console.warn('Firebase Auth indisponível ('+c+') — continuando sem autenticação.');
       }
     }
