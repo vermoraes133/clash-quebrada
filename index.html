@@ -180,6 +180,15 @@ body {
 #admin .btn-save { background:linear-gradient(135deg,#c0392b,#e74c3c); width:min(320px,90vw); font-size:1rem; padding:13px; border-radius:12px; margin-top:4px; }
 #admin .btn-back-adm { background:rgba(255,255,255,.08); width:min(320px,90vw); font-size:.9rem; padding:11px; border-radius:10px; }
 #admin .adm-status { color:#27ae60; font-size:.8rem; min-height:16px; text-align:center; }
+#admin .btn-fb-adm { background:linear-gradient(135deg,#1a5276,#2980b9); width:min(320px,90vw); font-size:.95rem; padding:11px; border-radius:10px; }
+.adm-fb-item { background:rgba(255,255,255,.05); border:1px solid #2c2c3e; border-radius:10px; padding:10px 12px; text-align:left; }
+.adm-fb-header { display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin-bottom:4px; }
+.adm-fb-stars { color:#f1c40f; font-size:1rem; letter-spacing:1px; }
+.adm-fb-name { color:#ecf0f1; font-weight:700; font-size:.85rem; }
+.adm-fb-mode { background:#1a2535; color:#7fb3d3; font-size:.72rem; padding:2px 6px; border-radius:6px; }
+.adm-fb-date { color:#666; font-size:.72rem; margin-left:auto; }
+.adm-fb-comment { color:#bdc3c7; font-size:.82rem; font-style:italic; margin:4px 0 0; line-height:1.4; }
+#admFbList::-webkit-scrollbar{width:4px}#admFbList::-webkit-scrollbar-thumb{background:#333;border-radius:4px}
 
 /* ── Lobby Online overlay ── */
 #lobby {
@@ -328,6 +337,12 @@ body {
   </div>
   <button class="btn-save" id="btnSaveDiff">💾 Salvar para Todos</button>
   <div class="adm-status" id="admStatus"></div>
+  <hr style="border-color:#333;margin:14px 0">
+  <button class="btn-fb-adm" id="btnAdminFeedbacks">💬 Ver Feedbacks dos Jogadores</button>
+  <div id="admFbWrap" style="display:none;width:100%;max-width:420px">
+    <div id="admFbStats" style="display:flex;gap:16px;justify-content:center;margin:8px 0;color:#f1c40f;font-size:.95rem"></div>
+    <div id="admFbList" style="display:flex;flex-direction:column;gap:8px;max-height:340px;overflow-y:auto;padding-right:4px"></div>
+  </div>
   <button class="btn-back-adm" id="btnAdminBack">← Voltar ao Menu</button>
 </div>
 
@@ -446,7 +461,7 @@ const SFX={
 
 // ── Música procedural (funk/baião 2.0 — 145 BPM, 3 níveis de intensidade) ──
 const MUSIC=(()=>{
-  const BPM=145, S=60/BPM/4, LEN=64;
+  let BPM=145; let S=60/BPM/4; const LEN=64;
   const C3=130.8,D3=146.8,Eb3=155.6,E3=164.8,F3=174.6,G3=196,Ab3=207.7,A3=220,B3=246.9,
         C4=261.6,D4=293.7,Eb4=311.1,E4=329.6,F4=349.2,G4=392,Ab4=415.3,A4=440,Bb4=466.2,B4=493.9,
         C5=523.3,D5=587.3,Eb5=622.3,E5=659.3,F5=698.5,G5=784,A5=880,_=0;
@@ -471,6 +486,15 @@ const MUSIC=(()=>{
   const PAD  =[[C4,E4,G4],_,_,_,_,_,_,_,[A3,C4,E4],_,_,_,_,_,_,_, [C4,E4,G4],_,_,_,_,_,_,_,[G3,B3,D4],_,_,_,_,_,_,_, [Eb4,G4,Bb4],_,_,_,_,_,_,_,[C4,E4,G4],_,_,_,_,_,_,_, [C4,E4,G4],_,_,_,_,_,_,_,[A3,C4,E4],_,_,_,_,_,_,_];
   // Metais/brass stabs (nível 2)
   const BRASS=[_,_,_,_,_,_,_,G4,_,_,_,_,_,_,_,_, _,_,_,_,_,_,_,E4,_,_,_,_,_,_,G4,_, _,_,_,_,_,_,_,_,_,_,_,Ab4,_,_,_,_, _,_,_,_,_,_,_,G4,_,_,_,_,_,_,E4,_];
+
+  // ─── Configuração musical por tema de arena ───────────────────────────
+  const THEME_CFG={
+    favela:{ bpm:145, noTamb:false, noClave:false, noLead:false, noHarm:false, noBrass:false }, // funk carioca cheio
+    predio:{ bpm:122, noTamb:true,  noClave:true,  noLead:false, noHarm:false, noBrass:true  }, // urbano/eletrônico suave
+    bosque:{ bpm:104, noTamb:false, noClave:true,  noLead:false, noHarm:false, noBrass:true  }, // samba devagar, sem metais
+    rua:   { bpm:160, noTamb:false, noClave:false, noLead:true,  noHarm:true,  noBrass:false }, // pesado e ritmado
+  };
+  let _tcfg=THEME_CFG.favela;
 
   let master=null,comp=null,rvb=null,nb=null,hb=null,step=0,nextT=0,timer=null,started=false,intensity=0;
   function a(){return getAC();}
@@ -557,17 +581,33 @@ const MUSIC=(()=>{
       if(KICK[i])kick(nextT);if(SNARE[i])snr(nextT);if(HH[i])hhC(nextT);if(HHO[i])hhO(nextT);
       if(BASS[i])bss(nextT,BASS[i]);if(PAD[i])pd(nextT,PAD[i]);
       // ─ Nível 1: percussão brasileira + melodia ─
-      if(intensity>=1){if(TAMB[i])tamb(nextT);if(CLAVE[i])clave(nextT);if(LEAD[i])ld(nextT,LEAD[i]);}
+      if(intensity>=1){
+        if(TAMB[i]&&!_tcfg.noTamb)tamb(nextT);
+        if(CLAVE[i]&&!_tcfg.noClave)clave(nextT);
+        if(LEAD[i]&&!_tcfg.noLead)ld(nextT,LEAD[i]);
+      }
       // ─ Nível 2: harmonia + metais ─
-      if(intensity>=2){if(HARM[i])hrm(nextT,HARM[i]);if(BRASS[i])brass(nextT,BRASS[i]);}
+      if(intensity>=2){
+        if(HARM[i]&&!_tcfg.noHarm)hrm(nextT,HARM[i]);
+        if(BRASS[i]&&!_tcfg.noBrass)brass(nextT,BRASS[i]);
+      }
       step++;nextT+=S;
     }
     timer=setTimeout(schedule,22);
   }
   return{
-    start(){if(started||soundMuted)return;started=true;intensity=0;boot();nextT=a().currentTime+.1;step=0;schedule();},
+    start(){
+      if(soundMuted)return;
+      // Para limpo antes de reiniciar (garante troca de tema)
+      if(timer){clearTimeout(timer);timer=null;}
+      started=true;intensity=0;boot();nextT=a().currentTime+.1;step=0;schedule();
+    },
     stop(){started=false;if(timer){clearTimeout(timer);timer=null;}},
     setIntensity(v){intensity=Math.max(0,Math.min(2,v|0));},
+    setTheme(t){
+      _tcfg=THEME_CFG[t]||THEME_CFG.favela;
+      BPM=_tcfg.bpm; S=60/BPM/4;
+    },
     syncMute(){if(!master){if(!soundMuted)this.start();return;}master.gain.linearRampToValueAtTime(soundMuted?0:.42,a().currentTime+.3);if(!soundMuted&&!started)this.start();},
   };
 })();
@@ -853,23 +893,35 @@ document.getElementById('btnLobbyBack').addEventListener('click',()=>{cleanupOnl
 let _presenceRef=null, _playersRef=null, _challengeRef=null, _lobbyHB=null;
 let _mlPlayers=[], _incomingCh=null, _outgoingCh=null;
 let _challengeTimeout=null, _acceptTimeout=null, _roomPresenceRef=null;
+// Presença global — registrada para todos os jogadores logados
+let _globalPresRef=null;
+
+function _gpUpdate(status){
+  if(!_globalPresRef||!_db)return;
+  _globalPresRef.update({status,ts:Date.now(),trophies:APP.progress?.trophies||0});
+}
+function _gpRegister(){
+  if(!_db||!APP.account)return;
+  const key=fbKey(APP.account.email);
+  _globalPresRef=_db.ref('presence/'+key);
+  _globalPresRef.set({name:APP.account.name,email:APP.account.email,status:'menu',ts:Date.now(),trophies:APP.progress.trophies||0});
+  _globalPresRef.onDisconnect().remove();
+}
 
 function enterMatchLobby(){
   if(!initFirebase()){return;}
   const myKey=fbKey(APP.account.email);
-  // Registra presença com onDisconnect automático
-  _presenceRef=_db.ref('matchlobby/players/'+myKey);
-  _presenceRef.set({name:APP.account.name,trophies:APP.progress.trophies||0,status:'waiting',ts:Date.now()});
-  _presenceRef.onDisconnect().remove();
-  // Heartbeat a cada 15s — mais agressivo para detectar desconexões rápido
-  _lobbyHB=setInterval(()=>{if(_presenceRef)_presenceRef.update({ts:Date.now()});},15000);
-  // Escuta lista de jogadores em tempo real — apenas ts < 30s (mais restrito)
-  _playersRef=_db.ref('matchlobby/players');
+  // Atualiza presença global para 'lobby'
+  _gpUpdate('lobby');
+  // Heartbeat a cada 15s para manter presença viva
+  _lobbyHB=setInterval(()=>{if(_globalPresRef)_globalPresRef.update({ts:Date.now()});},15000);
+  // Escuta TODOS os jogadores logados via /presence (não só quem está na sala)
+  _playersRef=_db.ref('presence');
   _playersRef.on('value',snap=>{
     _mlPlayers=[];
     snap.forEach(c=>{
       const d=c.val();
-      if(d&&d.name&&Date.now()-d.ts<30000) // 30s de freshness
+      if(d&&d.name&&Date.now()-d.ts<45000)
         _mlPlayers.push({key:c.key,...d,isMe:c.key===myKey});
     });
     _renderMLPlayers();
@@ -878,6 +930,7 @@ function enterMatchLobby(){
   _challengeRef=_db.ref('matchlobby/challenges/'+myKey);
   _challengeRef.on('child_added',snap=>{
     const ch=snap.val(); if(!ch||!ch.from)return;
+    if(_incomingCh||_outgoingCh)return; // ignora se já há desafio em curso
     _incomingCh={...ch,fromKey:snap.key};
     document.getElementById('mlChFrom').textContent=ch.from;
     document.getElementById('mlChTrophies').textContent=ch.trophies||0;
@@ -890,17 +943,21 @@ function enterMatchLobby(){
       document.getElementById('mlSubtitle').textContent='Desafio cancelado pelo oponente.';
     }
   });
-  // Mostra overlay
   document.getElementById('matchlobby').classList.add('show');
   _renderMLPlayers();
 }
 
 function leaveMatchLobby(){
-  if(_presenceRef){_presenceRef.remove();_presenceRef=null;}
+  // Limpa challenges pendentes no Firebase para não ficarem "fantasma"
+  if(_db&&APP.account){
+    const myKey=fbKey(APP.account.email);
+    _db.ref('matchlobby/challenges/'+myKey).remove();
+  }
   if(_playersRef){_playersRef.off();_playersRef=null;}
   if(_challengeRef){_challengeRef.off();_challengeRef=null;}
   if(_lobbyHB){clearInterval(_lobbyHB);_lobbyHB=null;}
   _mlPlayers=[]; _incomingCh=null; _outgoingCh=null;
+  _gpUpdate('menu'); // volta presença para menu
   document.getElementById('matchlobby').classList.remove('show');
   document.getElementById('mlIncoming').style.display='none';
   document.getElementById('mlOutgoing').style.display='none';
@@ -909,27 +966,34 @@ function leaveMatchLobby(){
 function _renderMLPlayers(){
   const myKey=fbKey(APP.account?.email||'');
   const others=_mlPlayers.filter(p=>!p.isMe);
-  const count=others.length;
+  const online=others.filter(p=>p.status!=='online').length;
   document.getElementById('mlSubtitle').textContent=
-    count===0?'Aguardando outros jogadores...':`${count} jogador${count>1?'es':''} na sala`;
+    others.length===0?'Nenhum jogador online agora...':`${others.length} online • ${online} disponíve${online===1?'l':'is'}`;
   const list=document.getElementById('mlPlayerList');
   if(others.length===0){
-    list.innerHTML='<p class="ml-empty">Nenhum jogador disponível agora.<br>Convide um amigo e venha jogar! 👥</p>';
+    list.innerHTML='<p class="ml-empty">Nenhum jogador online agora.<br>Compartilhe o link e convide alguém! 🎮</p>';
     return;
   }
-  const busy=!!_outgoingCh;
+  // Desabilita "Desafiar" se eu já tenho um desafio em andamento (enviado ou recebido)
+  const meBusy=!!_outgoingCh||!!_incomingCh;
+  const statusLabel={menu:'📋 No menu',lobby:'🏟️ Na sala',solo:'⚔️ Jogando solo',online:'🌐 Em batalha',busy:'⏳ Aguardando'};
+  const statusColor={menu:'#27ae60',lobby:'#3498db',solo:'#e67e22',online:'#e74c3c',busy:'#9b59b6'};
   list.innerHTML=others.map(p=>{
     const colors=['#e74c3c','#3498db','#27ae60','#9b59b6','#e67e22','#1abc9c','#e91e63','#ff5722'];
-    const color=colors[p.name.charCodeAt(0)%colors.length];
-    const occupied=p.status==='busy'||p.status==='challenging';
+    const avatarColor=colors[p.name.charCodeAt(0)%colors.length];
+    const st=p.status||'menu';
+    const inBattle=st==='online'; // não pode ser desafiado em batalha online
+    const canChallenge=!inBattle&&!meBusy;
+    const sLabel=statusLabel[st]||st;
+    const sColor=statusColor[st]||'#888';
     return `<div class="ml-player">
-      <div class="ml-avatar" style="background:${color}">${p.name[0].toUpperCase()}</div>
+      <div class="ml-avatar" style="background:${avatarColor}">${p.name[0].toUpperCase()}</div>
       <div class="ml-info">
         <div class="ml-name">${p.name}</div>
-        <div class="ml-trophies">🏆 ${p.trophies||0} troféus</div>
+        <div class="ml-trophies">🏆 ${p.trophies||0} • <span style="color:${sColor};font-size:.75rem">${sLabel}</span></div>
       </div>
-      <button class="ml-ch-btn" ${occupied||busy?'disabled':''} onclick="challengePlayer('${p.key}','${p.name.replace(/'/g,'\\\'')}')" >
-        ${occupied?'🔴 Ocupado':'⚔️ Desafiar'}
+      <button class="ml-ch-btn" ${canChallenge?'':'disabled'} onclick="challengePlayer('${p.key}','${p.name.replace(/'/g,'\\\'')}')" >
+        ${inBattle?'🔴 Em batalha':'⚔️ Desafiar'}
       </button>
     </div>`;
   }).join('');
@@ -1036,15 +1100,17 @@ function acceptChallenge(){
       name:APP.account.name,id:APP.account.id,deck:JSON.stringify(APP.progress.deck)
     });
     const myKey=fbKey(APP.account.email);
+    // Sinaliza 'accepted' e remove o challenge imediatamente (evita desafio fantasma)
     _db.ref('matchlobby/challenges/'+myKey+'/'+ch.fromKey+'/status').set('accepted');
-    if(_presenceRef)_presenceRef.update({status:'busy'});
+    setTimeout(()=>_db.ref('matchlobby/challenges/'+myKey+'/'+ch.fromKey).remove(),1500);
+    _gpUpdate('busy');
     document.getElementById('mlIncoming').style.display='none';
     document.getElementById('mlSubtitle').textContent='✅ Conectando...';
     // Timeout de 12s para o host iniciar a partida
     _acceptTimeout=setTimeout(()=>{
       _db.ref('rooms/'+code+'/status').off();
       _roomId=null;_myRole=null;_incomingCh=null;
-      if(_presenceRef)_presenceRef.update({status:'waiting'});
+      _gpUpdate('lobby');
       document.getElementById('mlSubtitle').textContent='⏱️ Host demorou — tente novamente.';
     },12000);
     _db.ref('rooms/'+code+'/status').on('value',snap=>{
@@ -1273,6 +1339,49 @@ document.getElementById('btnSaveDiff').addEventListener('click',async()=>{
 
 document.getElementById('btnAdminBack').addEventListener('click',hideAdmin);
 
+// ── Admin: Feedbacks ─────────────────────────────────────────
+let _fbAdmOpen=false;
+document.getElementById('btnAdminFeedbacks').addEventListener('click',async()=>{
+  _fbAdmOpen=!_fbAdmOpen;
+  const wrap=document.getElementById('admFbWrap');
+  const btn=document.getElementById('btnAdminFeedbacks');
+  if(!_fbAdmOpen){wrap.style.display='none';btn.textContent='💬 Ver Feedbacks dos Jogadores';return;}
+  wrap.style.display='block';
+  btn.textContent='💬 Fechar Feedbacks';
+  const listEl=document.getElementById('admFbList');
+  const statsEl=document.getElementById('admFbStats');
+  listEl.innerHTML='<p style="color:#aaa;text-align:center">🔄 Carregando...</p>';
+  statsEl.innerHTML='';
+  if(!_db){listEl.innerHTML='<p style="color:#e74c3c;text-align:center">Firebase não conectado.</p>';return;}
+  try{
+    const snap=await _db.ref('feedback').orderByChild('ts').limitToLast(50).once('value');
+    const items=[];
+    snap.forEach(c=>items.unshift(c.val())); // mais recente primeiro
+    if(!items.length){listEl.innerHTML='<p style="color:#888;text-align:center">Nenhum feedback ainda.</p>';return;}
+    // Estatísticas
+    const total=items.length;
+    const avg=(items.reduce((s,f)=>s+(f.rating||0),0)/total).toFixed(1);
+    const dist=[1,2,3,4,5].map(n=>items.filter(f=>f.rating===n).length);
+    statsEl.innerHTML=`<span>📊 ${total} avaliações</span><span>⭐ Média: <strong>${avg}/5</strong></span>`;
+    // Lista
+    const modeLabel={solo:'Solo',online:'Online'};
+    listEl.innerHTML=items.map(f=>{
+      const stars='⭐'.repeat(Math.max(0,Math.min(5,f.rating||0)));
+      const empty='☆'.repeat(5-(f.rating||0));
+      const dt=f.ts?new Date(f.ts).toLocaleDateString('pt-BR',{day:'2-digit',month:'2-digit',year:'2-digit',hour:'2-digit',minute:'2-digit'}):'';
+      return `<div class="adm-fb-item">
+        <div class="adm-fb-header">
+          <span class="adm-fb-stars">${stars}<span style="color:#444">${empty}</span></span>
+          <span class="adm-fb-name">${f.player||'Anônimo'}</span>
+          <span class="adm-fb-mode">${modeLabel[f.mode]||f.mode||'?'}</span>
+          <span class="adm-fb-date">${dt}</span>
+        </div>
+        ${f.comment?`<p class="adm-fb-comment">"${f.comment}"</p>`:''}
+      </div>`;
+    }).join('');
+  }catch(e){listEl.innerHTML='<p style="color:#e74c3c;text-align:center">Erro ao carregar: '+e.message+'</p>';}
+});
+
 function defaultProgress(){ return { trophies:0, wins:0, losses:0, draws:0, cardXP:{}, deck:[...DEFAULT_DECK], isNew:true, diamonds:0, owned:[] }; }
 
 function loadData(){
@@ -1333,8 +1442,8 @@ const APP={
 
 function goScreen(s){
   APP.screen=s;
-  if(s==='battle') MUSIC.start();
-  if(s==='menu')   MUSIC.stop();
+  if(s==='battle'){MUSIC.start();_gpUpdate(APP.mode==='online'?'online':'solo');}
+  if(s==='menu')  {MUSIC.stop(); _gpUpdate('menu');}
   if(s==='shop')   shopScrollY=0;
   if(s==='ranking') fbLoadRanking();
   if(s==='result')  setTimeout(showFeedback, 3500); // feedback após resultado
@@ -1365,7 +1474,7 @@ function newBattle(p1DeckOverride, p2DeckOverride){
     p1Sel:null, p2Sel:null,
     p1DeckIdx:0, p2DeckIdx:0,
     p1Hand:[], p2Hand:[],
-    p1Deck:pd, p2Deck: APP.mode==='local2p'?(APP.p2Account?.deck||[...DEFAULT_DECK]):ed,
+    p1Deck:pd, p2Deck:ed,
     aiTimer:0, aiNext:rand(2.5,5),
     units:[], projs:[], efx:[],
     towers:makeTowers(),
@@ -1373,6 +1482,7 @@ function newBattle(p1DeckOverride, p2DeckOverride){
     earnedDiamonds:0, obstacles:[],
   };
   currentTheme=ARENA_THEMES[Math.floor(Math.random()*ARENA_THEMES.length)];
+  MUSIC.setTheme(currentTheme); // aplica BPM e camadas do tema antes de start()
   setupThemeObstacles();
   for(let i=0;i<4;i++){G.p1Hand.push(G.p1Deck[i%G.p1Deck.length]);G.p2Hand.push(G.p2Deck[i%G.p2Deck.length]);}
 }
@@ -1639,7 +1749,7 @@ function updateTowers(now){
 }
 
 function updateAI(dt){
-  if(APP.mode==='local2p'||APP.mode==='online')return;
+  if(APP.mode==='online')return;
   G.aiTimer+=dt;
   if(G.aiTimer<G.aiNext)return;
   G.aiTimer=0; G.aiNext=rand(currentDiff.aiMin, currentDiff.aiMax);
@@ -1708,12 +1818,18 @@ function checkWin(){
     else{APP.battleResult='draw';APP.progress.draws++;APP.progress.trophies+=5;addXPtoCards(APP.progress.deck,12);G.earnedDiamonds=0;}
     updateRanking();
     if(APP.mode==='online'){
-      APP.wasOnline=true; // marca para tela de resultado mostrar UI online
+      APP.wasOnline=true;
       _rematchPending=false;
       if(_db&&_roomId){
-        _db.ref('rooms/'+_roomId+'/events').off(); // para de receber novos deploys
-        _db.ref('rooms/'+_roomId+'/rematch').remove(); // limpa estado anterior
+        _db.ref('rooms/'+_roomId+'/events').off();
+        _db.ref('rooms/'+_roomId+'/rematch').remove();
       }
+      // Limpa todos os challenges pendentes desta sessão (evita "fantasmas")
+      if(_db&&APP.account){
+        const _ck=fbKey(APP.account.email);
+        _db.ref('matchlobby/challenges/'+_ck).remove();
+      }
+      _gpUpdate('menu');
     }
     setTimeout(()=>goScreen('result'),2000);
   }
@@ -2032,30 +2148,13 @@ function drawP2UI(){
   // P2 / AI info bar at top
   ctx.fillStyle='#0a080e';ctx.fillRect(0,0,W,P2_UI_H);
   ctx.strokeStyle='#222';ctx.lineWidth=1;ctx.beginPath();ctx.moveTo(0,P2_UI_H);ctx.lineTo(W,P2_UI_H);ctx.stroke();
-  // Se for 2P local, mostrar cartas do P2
-  if(APP.mode==='local2p'){
-    const CW=60,CH=50,CS=4,total=4*CW+3*CS,CX0=(W-total)/2,CY=8;
-    G.p2Hand.forEach((key,i)=>{
-      const d=CARDS[key];if(!d)return;
-      const cx=CX0+i*(CW+CS),sel=G.p2Sel===i,can=G.p2Elixir>=d.cost;
-      ctx.fillStyle=sel?'#7b1f00':can?'#1a1010':'#0e0a0a';ctx.strokeStyle=sel?'#e74c3c':can?'#c0392b':'#333';ctx.lineWidth=sel?2.5:1.5;
-      ctx.beginPath();ctx.roundRect(cx,CY,CW,CH,6);ctx.fill();ctx.stroke();
-      ctx.globalAlpha=can?1:.4;ctx.font='20px Arial';ctx.textAlign='center';ctx.textBaseline='middle';ctx.fillText(d.emoji,cx+CW/2,CY+18);ctx.globalAlpha=1;
-      ctx.fillStyle='rgba(155,89,182,1)';ctx.beginPath();ctx.arc(cx+CW-9,CY+9,8,0,Math.PI*2);ctx.fill();ctx.fillStyle='#fff';ctx.font='bold 9px Arial';ctx.textAlign='center';ctx.textBaseline='middle';ctx.fillText(d.cost,cx+CW-9,CY+9);
-    });
-    // P2 elixir
-    const EW=70,EH=10;ctx.fillStyle='#1a0d2e';ctx.fillRect(W-EW-6,CY+CH+4,EW,EH);
-    for(let i=0;i<10;i++){const seg=(EW-2)/10-1,sx=W-EW-5+i*(seg+1);ctx.fillStyle=G.p2Elixir>=i+1?'#c0392b':'#2c0808';ctx.fillRect(sx,CY+CH+5,seg,EH-2);}
-    ctx.fillStyle='#f1948a';ctx.font='9px Arial';ctx.textAlign='right';ctx.textBaseline='middle';ctx.fillText(`⚡${Math.floor(G.p2Elixir)}`,W-EW-10,CY+CH+9);
-    ctx.fillStyle='#e74c3c';ctx.font='bold 10px Arial';ctx.textAlign='left';ctx.textBaseline='top';ctx.fillText('🔴 JOGADOR 2 (teclas 1-4)',6,6);
-  }else{
-    // Solo mode — mostrar elixir do inimigo
-    ctx.fillStyle='#333';ctx.font='bold 11px Arial';ctx.textAlign='left';ctx.textBaseline='middle';ctx.fillText('🤖 INIMIGO IA',10,P2_UI_H/2);
-    const EW=100,EH=12,EX=W-EW-10,EY=(P2_UI_H-EH)/2;
-    ctx.fillStyle='#1a0d2e';ctx.fillRect(EX,EY,EW,EH);
-    for(let i=0;i<10;i++){const seg=(EW-2)/10-1,sx=EX+1+i*(seg+1);ctx.fillStyle=G.p2Elixir>=i+1?'#c0392b':'#2c0808';ctx.fillRect(sx,EY+1,seg,EH-2);}
-    ctx.fillStyle='#f1948a';ctx.font='10px Arial';ctx.textAlign='right';ctx.textBaseline='middle';ctx.fillText(`⚡${Math.floor(G.p2Elixir)}`,EX-4,P2_UI_H/2);
-  }
+  // Solo/online — mostrar elixir do inimigo/oponente
+  const _p2label=APP.mode==='online'?('🌐 '+(_opponentName||'Oponente')):'🤖 INIMIGO IA';
+  ctx.fillStyle='#333';ctx.font='bold 11px Arial';ctx.textAlign='left';ctx.textBaseline='middle';ctx.fillText(_p2label,10,P2_UI_H/2);
+  const EW=100,EH=12,EX=W-EW-10,EY=(P2_UI_H-EH)/2;
+  ctx.fillStyle='#1a0d2e';ctx.fillRect(EX,EY,EW,EH);
+  for(let i=0;i<10;i++){const seg=(EW-2)/10-1,sx=EX+1+i*(seg+1);ctx.fillStyle=G.p2Elixir>=i+1?'#c0392b':'#2c0808';ctx.fillRect(sx,EY+1,seg,EH-2);}
+  ctx.fillStyle='#f1948a';ctx.font='10px Arial';ctx.textAlign='right';ctx.textBaseline='middle';ctx.fillText(`⚡${Math.floor(G.p2Elixir)}`,EX-4,P2_UI_H/2);
 }
 
 function drawHUD(){
@@ -2140,8 +2239,7 @@ function drawMenu(){
 
   const btns=[
     {label:'⚔️  Jogar Solo',    color:'#e67e22',hover:'#e74c3c', id:0},
-    {label:'👥  2 Jogadores',   color:'#2980b9',hover:'#3498db', id:1},
-    {label:'🌐  Online',        color:'#27ae60',hover:'#2ecc71', id:2},
+    {label:'🏟️  Sala de Desafios', color:'#27ae60',hover:'#2ecc71', id:2},
     {label:'🃏  Meu Deck',      color:'#8e44ad',hover:'#9b59b6', id:3},
     {label:'🏆  Ranking',       color:'#16a085',hover:'#1abc9c', id:4},
     {label:'💎  Loja',          color:'#8e44ad',hover:'#ab47bc', id:5},
@@ -2270,7 +2368,7 @@ function drawResult(){
   const r=APP.battleResult;
   const isOnline=APP.wasOnline||APP.mode==='online';
   const myName=APP.account?.name||'Você';
-  const oppName=isOnline?_opponentName:(APP.mode==='local2p'?'Jogador 2':'IA');
+  const oppName=isOnline?_opponentName:'IA';
   const winName=r==='win'?myName:r==='lose'?oppName:null;
   const loseName=r==='win'?oppName:r==='lose'?myName:null;
 
@@ -2497,7 +2595,6 @@ function drawBattle(){
   drawArena();
   G.towers.forEach(drawTower);
   drawDeployZone(G.p1Sel,G.p1Hand,'player');
-  if(APP.mode==='local2p') drawDeployZone(G.p2Sel,G.p2Hand,'enemy');
   G.units.forEach(drawUnit);
   G.projs.forEach(drawProjectile);
   ctx.restore();
@@ -2543,7 +2640,6 @@ function handleClick(mx,my){
       if(mx>=b.x&&mx<=b.x+b.w&&my>=b.y&&my<=b.y+b.h){
         SFX.click();
         if(b.id===0){APP.mode='solo';APP.tmpDeck=[...APP.progress.deck];startDeckSelect();}
-        else if(b.id===1){APP.mode='local2p';APP.tmpDeck=[...APP.progress.deck];startDeckSelect();}
         else if(b.id===2)enterMatchLobby();                         // Sala de Desafios
         else if(b.id===3){APP.tmpDeck=[...APP.progress.deck];APP.deckTimer=9999;goScreen('deckSelect');}
         else if(b.id===4)goScreen('ranking');
@@ -2664,26 +2760,6 @@ function handleClick(mx,my){
       G.showForfeitConfirm=true;return;
     }
 
-    // P2 2P mode card select (keyboard-like via tap on top)
-    if(APP.mode==='local2p'&&my>=0&&my<=P2_UI_H){
-      const CW=60,CH=50,CS=4,total=4*CW+3*CS,CX0=(W-total)/2,CY=8;
-      for(let i=0;i<4;i++){const cx=CX0+i*(CW+CS);if(mx>=cx&&mx<=cx+CW&&my>=CY&&my<=CY+CH){const d=CARDS[G.p2Hand[i]];if(d&&G.p2Elixir>=d.cost){G.p2Sel=G.p2Sel===i?null:i;SFX.select();}return;}}
-    }
-
-    // P2 deploy in top arena
-    if(APP.mode==='local2p'&&G.p2Sel!==null&&my>=ARENA_TOP&&my<=RIVER_Y+30){
-      const key=G.p2Hand[G.p2Sel],d=CARDS[key];
-      if(d&&G.p2Elixir>=d.cost){
-        G.p2Elixir-=d.cost;
-        spawnUnit(key,mx,my,'enemy');
-        const _da2=d.deckAdvance||1;
-        G.p2Hand[G.p2Sel]=G.p2Deck[G.p2DeckIdx%G.p2Deck.length];
-        G.p2DeckIdx+=_da2;
-        G.p2Sel=null;
-      }
-      return;
-    }
-
     // P1 card select
     const CW=84,CH=74,CS=5,total2=4*CW+3*CS,CX0=(W-total2)/2,CY=ARENA_BOT+36;
     for(let i=0;i<4;i++){
@@ -2735,12 +2811,6 @@ canvas.addEventListener('wheel',e=>{
   if(APP.screen==='shop'){shopScrollY=Math.max(0,shopScrollY+e.deltaY*.45);e.preventDefault();}
 },{passive:false});
 
-// Teclado P2 (local 2P)
-document.addEventListener('keydown',e=>{
-  if(APP.screen!=='battle'||APP.mode!=='local2p')return;
-  const map={'1':0,'2':1,'3':2,'4':3};
-  if(map[e.key]!==undefined){const i=map[e.key];const d=CARDS[G.p2Hand[i]];if(d&&G.p2Elixir>=d.cost){G.p2Sel=G.p2Sel===i?null:i;SFX.select();}}
-});
 
 // ════════════════════════════════════════════════════════════
 //  FLUXO DO APP
@@ -2858,6 +2928,7 @@ document.getElementById('btnEnter').addEventListener('click', async ()=>{
 
   await checkAdminAccess();
   loadDifficultyConfig();
+  _gpRegister(); // presença global
 
   document.getElementById('btnEnter').disabled=false;
   err.textContent='';
