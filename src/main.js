@@ -481,17 +481,23 @@ if (btnEnter) {
       'auth/too-many-requests',
     ];
 
+    // Helper: promise with timeout
+    function withTimeout(promise, ms) {
+      return Promise.race([promise, new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), ms))]);
+    }
+
     const auth = getAuth();
     if (auth) {
       try {
-        await auth.signInWithEmailAndPassword(email, pass);
+        err.textContent = 'Autenticando...';
+        await withTimeout(auth.signInWithEmailAndPassword(email, pass), 8000);
       } catch (authErr) {
-        const c = authErr.code || '';
+        const c = authErr.code || authErr.message || '';
         const needsCreate = c === 'auth/user-not-found' || c === 'auth/invalid-credential';
         if (needsCreate) {
           try {
-            err.textContent = 'Verificando conta...';
-            await auth.createUserWithEmailAndPassword(email, pass);
+            err.textContent = 'Criando conta...';
+            await withTimeout(auth.createUserWithEmailAndPassword(email, pass), 8000);
           } catch (regErr) {
             const rc = regErr.code || '';
             if (rc === 'auth/email-already-in-use') {
@@ -509,24 +515,25 @@ if (btnEnter) {
               err.textContent = 'Email invalido!';
               return;
             }
-            if (!_AUTH_BYPASS.includes(rc) && !rc.startsWith('auth/')) {
-              console.warn('Auth create aviso:', rc);
-            }
+            console.warn('[Login] Auth create:', rc || regErr.message);
           }
         } else if (c === 'auth/wrong-password') {
           document.getElementById('btnEnter').disabled = false;
           err.textContent = 'Senha incorreta!';
           return;
-        } else if (!_AUTH_BYPASS.includes(c) && !c.startsWith('auth/')) {
-          console.warn('Firebase Auth indisponivel (' + c + ')');
+        } else if (c === 'timeout') {
+          console.warn('[Login] Firebase Auth timeout — continuando offline');
+        } else {
+          console.warn('[Login] Firebase Auth:', c);
         }
       }
     }
 
     // Load account from Firebase or local storage
+    err.textContent = 'Carregando dados...';
     let fbUser = null;
     try {
-      fbUser = await fbLoadAccount(email);
+      fbUser = await withTimeout(fbLoadAccount(email), 5000);
     } catch (loadErr) {
       console.warn('[Login] fbLoadAccount falhou:', loadErr.message || loadErr);
     }
