@@ -1,0 +1,294 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+  <title>Clash Quebrada ⚔️</title>
+
+  <!-- Firebase compat SDKs -->
+  <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-database-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-auth-compat.js"></script>
+
+  <style>
+    * { margin:0; padding:0; box-sizing:border-box; }
+    body {
+      background:#060610;
+      display:flex; align-items:center; justify-content:center;
+      height:100vh; overflow:hidden; font-family:'Segoe UI',Arial,sans-serif;
+      touch-action:none;
+    }
+    #game-container canvas { display:block; cursor:pointer; }
+
+    /* Login overlay */
+    #login {
+      position:fixed; inset:0;
+      background:linear-gradient(160deg,#0d0d2e,#1a0a2e,#0a1a3e);
+      display:flex; flex-direction:column; align-items:center; justify-content:center;
+      gap:14px; z-index:100; padding:20px;
+    }
+    #login.hide { display:none; }
+    #login h1 { color:#f1c40f; font-size:2.4rem; text-shadow:0 0 20px #f1c40f88; }
+    #login p  { color:#888; font-size:.85rem; margin-top:-8px; }
+    #login input {
+      width:min(300px,90vw); padding:13px 16px;
+      border-radius:12px; border:2px solid #3498db44;
+      background:#ffffff0e; color:#fff;
+      font-size:1rem; outline:none; transition:border .2s;
+    }
+    #login input:focus { border-color:#f1c40f; }
+    #login button {
+      width:min(300px,90vw); padding:14px;
+      border-radius:12px; border:none;
+      background:linear-gradient(135deg,#e67e22,#e74c3c);
+      color:#fff; font-size:1.1rem; font-weight:700;
+      cursor:pointer; letter-spacing:.5px;
+      box-shadow:0 4px 20px #e74c3c55;
+      transition:transform .1s, box-shadow .2s;
+    }
+    #login button:active { transform:scale(.97); }
+    #login .err { color:#e74c3c; font-size:.85rem; min-height:18px; }
+    #login .already { color:#aaa; font-size:.8rem; cursor:pointer; text-decoration:underline; }
+    #login .login-toggle { color:#3498db; font-size:.82rem; cursor:pointer; text-decoration:underline; }
+
+    /* Feedback overlay */
+    #feedbackOverlay {
+      position:fixed; inset:0;
+      background:rgba(0,0,0,.88);
+      display:none; flex-direction:column; align-items:center; justify-content:center;
+      gap:14px; z-index:200; padding:20px;
+    }
+    #feedbackOverlay.show { display:flex; }
+    #feedbackOverlay h2 { color:#f1c40f; font-size:1.5rem; text-shadow:0 0 16px #f1c40f55; }
+    #feedbackOverlay p { color:#aaa; font-size:.9rem; margin-top:-6px; text-align:center; }
+    .fb-stars { display:flex; gap:10px; cursor:pointer; }
+    .fb-stars span { font-size:2.2rem; filter:grayscale(1) brightness(.6); transition:filter .15s; user-select:none; }
+    .fb-stars span.lit { filter:none; }
+    #fbText { width:min(320px,90vw); height:80px; border-radius:10px; border:1.5px solid #333;
+      background:#111; color:#fff; font-size:.9rem; padding:10px; resize:none; outline:none; }
+    #fbText:focus { border-color:#f1c40f44; }
+    .fb-btns { display:flex; gap:12px; }
+    .fb-btns button { padding:12px 28px; border-radius:10px; border:none; font-size:1rem; font-weight:700; cursor:pointer; }
+    #btnFbSend { background:linear-gradient(135deg,#e67e22,#e74c3c); color:#fff; box-shadow:0 4px 16px #e74c3c44; }
+    #btnFbSkip { background:rgba(255,255,255,.08); color:#888; }
+
+    /* Sala de Desafios */
+    #matchlobby {
+      position:fixed; inset:0;
+      background:linear-gradient(160deg,#050d1a,#091525,#060e18);
+      display:none; flex-direction:column; align-items:center; justify-content:flex-start;
+      gap:10px; z-index:100; padding:20px 16px; overflow-y:auto;
+    }
+    #matchlobby.show { display:flex; }
+    #matchlobby h2 { color:#3498db; font-size:1.7rem; text-shadow:0 0 18px #3498db88; margin-bottom:0; }
+    #matchlobby .ml-subtitle { display:flex; align-items:center; gap:6px; color:#888; font-size:.82rem; }
+    #matchlobby .ml-dot { width:8px; height:8px; border-radius:50%; background:#27ae60; box-shadow:0 0 6px #27ae60; animation:mlpulse 1.4s infinite; }
+    @keyframes mlpulse { 0%,100%{opacity:1}50%{opacity:.4} }
+    .ml-player { display:flex; align-items:center; gap:10px; background:rgba(255,255,255,.05); border:1px solid rgba(255,255,255,.08); border-radius:14px; padding:10px 12px; width:min(340px,90vw); }
+    .ml-avatar { width:42px; height:42px; border-radius:50%; display:flex; align-items:center; justify-content:center; font-size:19px; font-weight:900; flex-shrink:0; border:2px solid rgba(255,255,255,.15); }
+    .ml-info { flex:1; min-width:0; }
+    .ml-name { color:#fff; font-size:.9rem; font-weight:700; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+    .ml-trophies { color:#f1c40f; font-size:.75rem; margin-top:1px; }
+    .ml-ch-btn { padding:8px 13px; border-radius:9px; border:none; background:linear-gradient(135deg,#e67e22,#e74c3c); color:#fff; font-size:.8rem; font-weight:700; cursor:pointer; white-space:nowrap; transition:transform .1s; }
+    .ml-ch-btn:active { transform:scale(.95); }
+    .ml-ch-btn:disabled { background:#2a2a2a; color:#555; cursor:not-allowed; }
+    .ml-incoming-card { width:min(340px,90vw); background:rgba(231,76,60,.14); border:1.5px solid #e74c3c66; border-radius:14px; padding:14px 16px; text-align:center; animation:shake .4s; }
+    @keyframes shake { 0%,100%{transform:translateX(0)}25%{transform:translateX(-6px)}75%{transform:translateX(6px)} }
+    .ml-incoming-card p { color:#fff; font-size:.9rem; margin-bottom:4px; }
+    .ml-incoming-card .ml-ch-from { color:#f1c40f; font-size:1rem; font-weight:900; }
+    .ml-incoming-card .ml-ch-trophies { color:#aaa; font-size:.78rem; margin-bottom:10px; }
+    .ml-incoming-card .ml-btns { display:flex; gap:8px; justify-content:center; }
+    .ml-btn-accept { padding:9px 20px; border-radius:9px; border:none; background:linear-gradient(135deg,#27ae60,#2ecc71); color:#fff; font-size:.88rem; font-weight:700; cursor:pointer; }
+    .ml-btn-decline { padding:9px 16px; border-radius:9px; border:none; background:rgba(255,255,255,.1); color:#aaa; font-size:.88rem; font-weight:700; cursor:pointer; }
+    .ml-outgoing-card { width:min(340px,90vw); background:rgba(241,196,15,.10); border:1.5px solid #f1c40f44; border-radius:14px; padding:12px 16px; text-align:center; }
+    .ml-outgoing-card p { color:#f1c40f; font-size:.88rem; margin-bottom:8px; }
+    .ml-btn-cancel { padding:7px 18px; border-radius:8px; border:none; background:rgba(255,255,255,.1); color:#aaa; font-size:.82rem; cursor:pointer; }
+    .ml-sep { color:#333; font-size:.75rem; width:min(340px,90vw); text-align:center; border-top:1px solid #1a2030; padding-top:10px; margin-top:2px; }
+    .ml-empty { color:#555; font-size:.85rem; text-align:center; padding:20px 0; line-height:1.6; }
+    .ml-btn-code { width:min(340px,90vw); padding:12px; border-radius:11px; border:none; background:rgba(52,152,219,.2); color:#3498db; font-size:.9rem; font-weight:700; cursor:pointer; border:1px solid #3498db44; transition:background .2s; }
+    .ml-btn-code:hover { background:rgba(52,152,219,.35); }
+    .ml-btn-mlback { width:min(340px,90vw); padding:11px; border-radius:11px; border:none; background:rgba(255,255,255,.06); color:#aaa; font-size:.88rem; font-weight:700; cursor:pointer; }
+
+    /* Admin Panel */
+    #admin {
+      position:fixed; inset:0;
+      background:linear-gradient(160deg,#1a0808,#2a0a0a,#0a0a1a);
+      display:none; flex-direction:column; align-items:center; justify-content:flex-start;
+      gap:10px; z-index:100; padding:24px 20px; overflow-y:auto;
+    }
+    #admin.show { display:flex; }
+    #admin h2 { color:#e74c3c; font-size:1.6rem; text-shadow:0 0 18px #e74c3c88; margin-bottom:2px; }
+    #admin .adm-sub { color:#888; font-size:.82rem; text-align:center; }
+    #admin .adm-sub strong { color:#f1c40f; }
+    #admin .adm-preset { display:grid; grid-template-columns:1fr 1fr; gap:8px; width:min(320px,90vw); }
+    #admin button { padding:11px; border-radius:10px; border:none; color:#fff; font-size:.9rem; font-weight:700; cursor:pointer; transition:transform .1s; }
+    #admin button:active { transform:scale(.97); }
+    #admin .adm-section { width:min(320px,90vw); }
+    #admin .adm-section h3 { color:#888; font-size:.72rem; text-transform:uppercase; letter-spacing:1px; margin-bottom:8px; border-bottom:1px solid #333; padding-bottom:4px; }
+    #admin .adm-row { display:flex; align-items:center; gap:8px; margin-bottom:9px; }
+    #admin .adm-row label { color:#ccc; font-size:.83rem; flex:1.2; }
+    #admin .adm-row input[type=range] { flex:1.4; accent-color:#e74c3c; }
+    #admin .adm-row .adm-val { color:#f1c40f; font-size:.83rem; width:38px; text-align:right; }
+    #admin .adm-row input[type=checkbox] { width:18px; height:18px; accent-color:#e74c3c; cursor:pointer; }
+    #admin .btn-save { background:linear-gradient(135deg,#c0392b,#e74c3c); width:min(320px,90vw); font-size:1rem; padding:13px; border-radius:12px; margin-top:4px; }
+    #admin .btn-back-adm { background:rgba(255,255,255,.08); width:min(320px,90vw); font-size:.9rem; padding:11px; border-radius:10px; }
+    #admin .adm-status { color:#27ae60; font-size:.8rem; min-height:16px; text-align:center; }
+    #admin .btn-fb-adm { background:linear-gradient(135deg,#1a5276,#2980b9); width:min(320px,90vw); font-size:.95rem; padding:11px; border-radius:10px; }
+    .adm-fb-item { background:rgba(255,255,255,.05); border:1px solid #2c2c3e; border-radius:10px; padding:10px 12px; text-align:left; }
+    .adm-fb-header { display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin-bottom:4px; }
+    .adm-fb-stars { color:#f1c40f; font-size:1rem; letter-spacing:1px; }
+    .adm-fb-name { color:#ecf0f1; font-weight:700; font-size:.85rem; }
+    .adm-fb-mode { background:#1a2535; color:#7fb3d3; font-size:.72rem; padding:2px 6px; border-radius:6px; }
+    .adm-fb-date { color:#666; font-size:.72rem; margin-left:auto; }
+    .adm-fb-comment { color:#bdc3c7; font-size:.82rem; font-style:italic; margin:4px 0 0; line-height:1.4; }
+    #admFbList::-webkit-scrollbar{width:4px}#admFbList::-webkit-scrollbar-thumb{background:#333;border-radius:4px}
+
+    /* Lobby Online */
+    #lobby {
+      position:fixed; inset:0;
+      background:linear-gradient(160deg,#0d1f0d,#0d1a2e,#0a1a3e);
+      display:none; flex-direction:column; align-items:center; justify-content:center;
+      gap:12px; z-index:100; padding:24px;
+    }
+    #lobby.show { display:flex; }
+    #lobby h2 { color:#27ae60; font-size:1.8rem; text-shadow:0 0 18px #27ae6088; }
+    #lobby p  { color:#888; font-size:.85rem; text-align:center; }
+    #lobby .code-box { font-size:2.8rem; font-weight:900; letter-spacing:10px; color:#f1c40f; text-shadow:0 0 20px #f1c40f66; background:rgba(255,255,255,.06); border-radius:14px; padding:12px 28px; border:2px solid #f1c40f44; }
+    #lobby input { width:min(280px,85vw); padding:13px 16px; border-radius:12px; border:2px solid #27ae6044; background:#ffffff0e; color:#fff; font-size:1.4rem; font-weight:700; letter-spacing:8px; text-align:center; outline:none; text-transform:uppercase; transition:border .2s; }
+    #lobby input:focus { border-color:#27ae60; }
+    #lobby input::placeholder { font-size:.95rem; letter-spacing:1px; font-weight:400; }
+    #lobby button { width:min(280px,85vw); padding:13px; border-radius:12px; border:none; color:#fff; font-size:1rem; font-weight:700; cursor:pointer; transition:transform .1s, opacity .2s; }
+    #lobby button:active { transform:scale(.97); }
+    #lobby .btn-green  { background:linear-gradient(135deg,#27ae60,#2ecc71); }
+    #lobby .btn-blue   { background:linear-gradient(135deg,#2980b9,#3498db); }
+    #lobby .btn-back   { background:rgba(255,255,255,.08); margin-top:6px; font-size:.9rem; }
+    #lobby .sep { color:#555; font-size:.8rem; }
+    #lobby .status { color:#f1c40f; font-size:.9rem; min-height:20px; text-align:center; }
+    #lobby .err { color:#e74c3c; font-size:.82rem; min-height:16px; }
+    #lobby #lbMenu, #lobby #lbWait { display:flex; flex-direction:column; align-items:center; gap:12px; width:min(300px,90vw); }
+  </style>
+</head>
+<body>
+
+  <div id="login">
+    <h1>⚔️ Clash Quebrada</h1>
+    <p>O jogo da quebrada — entre e bata no inimigo!</p>
+    <input id="iName"  type="text"     placeholder="Seu apelido de guerreiro" maxlength="18">
+    <input id="iEmail" type="email"    placeholder="Email" maxlength="50">
+    <input id="iPass"  type="password" placeholder="Senha (mín. 6 caracteres)" maxlength="72">
+    <button id="btnEnter">Entrar na Batalha! 🔥</button>
+    <div class="err" id="loginErr"></div>
+    <span style="color:#666;font-size:.75rem">Primeira vez? A conta é criada automaticamente.</span>
+  </div>
+
+  <div id="feedbackOverlay">
+    <h2>💬 Feedback do Jogo</h2>
+    <p>Como foi essa partida? Sua opinião melhora o jogo!</p>
+    <div class="fb-stars" id="fbStars">
+      <span data-v="1">⭐</span><span data-v="2">⭐</span><span data-v="3">⭐</span><span data-v="4">⭐</span><span data-v="5">⭐</span>
+    </div>
+    <textarea id="fbText" placeholder="Sugestões, bugs, elogios... (opcional)" maxlength="300"></textarea>
+    <div class="fb-btns">
+      <button id="btnFbSend">Enviar 📨</button>
+      <button id="btnFbSkip">Pular →</button>
+    </div>
+  </div>
+
+  <div id="matchlobby">
+    <h2>🏟️ Sala de Desafios</h2>
+    <div class="ml-subtitle">
+      <div class="ml-dot"></div>
+      <span id="mlSubtitle">Entrando na sala...</span>
+    </div>
+    <div id="mlIncoming" style="display:none" class="ml-incoming-card">
+      <p>⚔️ <span class="ml-ch-from" id="mlChFrom">Jogador</span> quer te desafiar!</p>
+      <p class="ml-ch-trophies">🏆 <span id="mlChTrophies">0</span> troféus</p>
+      <div class="ml-btns">
+        <button class="ml-btn-accept" id="btnAcceptCh">✅ Aceitar</button>
+        <button class="ml-btn-decline" id="btnDeclineCh">❌ Recusar</button>
+      </div>
+    </div>
+    <div id="mlOutgoing" style="display:none" class="ml-outgoing-card">
+      <p>⏳ Aguardando <strong id="mlOutName">...</strong> aceitar...</p>
+      <button class="ml-btn-cancel" id="btnCancelCh">Cancelar</button>
+    </div>
+    <div id="mlPlayerList" style="display:flex;flex-direction:column;gap:8px;width:min(340px,90vw)">
+      <p class="ml-empty">Carregando jogadores...</p>
+    </div>
+    <div class="ml-sep">— ou jogue com código privado —</div>
+    <button class="ml-btn-code" id="btnUseCode">🔑 Criar / Entrar com Código</button>
+    <button class="ml-btn-mlback" id="btnMatchLobbyBack">← Voltar ao Menu</button>
+  </div>
+
+  <div id="admin">
+    <h2>⚙️ Painel Admin</h2>
+    <p class="adm-sub">Dificuldade atual: <strong id="admCurrent">Médio</strong></p>
+    <div class="adm-section">
+      <h3>Presets rápidos</h3>
+      <div class="adm-preset">
+        <button id="btnDiffFacil"      style="background:linear-gradient(135deg,#27ae60,#2ecc71)">🟢 Fácil</button>
+        <button id="btnDiffMedio"      style="background:linear-gradient(135deg,#f39c12,#e67e22)">🟡 Médio</button>
+        <button id="btnDiffDificil"    style="background:linear-gradient(135deg,#c0392b,#e74c3c)">🔴 Difícil</button>
+        <button id="btnDiffImpossivel" style="background:linear-gradient(135deg,#4a0040,#7d0065)">💀 Impossível</button>
+      </div>
+    </div>
+    <div class="adm-section">
+      <h3>Ajuste fino</h3>
+      <div class="adm-row">
+        <label>⏱ IA mín (s)</label>
+        <input type="range" id="sldAiMin" min="0.3" max="8" step="0.1" value="2.5">
+        <span class="adm-val" id="valAiMin">2.5</span>
+      </div>
+      <div class="adm-row">
+        <label>⏱ IA máx (s)</label>
+        <input type="range" id="sldAiMax" min="1" max="14" step="0.1" value="5.5">
+        <span class="adm-val" id="valAiMax">5.5</span>
+      </div>
+      <div class="adm-row">
+        <label>💪 Força inimigo</label>
+        <input type="range" id="sldStat" min="0.4" max="2.5" step="0.05" value="1">
+        <span class="adm-val" id="valStat">1.0×</span>
+      </div>
+      <div class="adm-row">
+        <label>⚡ Elixir inimigo</label>
+        <input type="range" id="sldElixir" min="0.4" max="2" step="0.05" value="1">
+        <span class="adm-val" id="valElixir">1.0×</span>
+      </div>
+      <div class="adm-row">
+        <label>🧠 IA inteligente</label>
+        <input type="checkbox" id="chkSmart">
+      </div>
+    </div>
+    <button class="btn-save" id="btnSaveDiff">💾 Salvar para Todos</button>
+    <div class="adm-status" id="admStatus"></div>
+    <hr style="border-color:#333;margin:14px 0">
+    <button class="btn-fb-adm" id="btnAdminFeedbacks">💬 Ver Feedbacks dos Jogadores</button>
+    <div id="admFbWrap" style="display:none;width:100%;max-width:420px">
+      <div id="admFbStats" style="display:flex;gap:16px;justify-content:center;margin:8px 0;color:#f1c40f;font-size:.95rem"></div>
+      <div id="admFbList" style="display:flex;flex-direction:column;gap:8px;max-height:340px;overflow-y:auto;padding-right:4px"></div>
+    </div>
+    <button class="btn-back-adm" id="btnAdminBack">← Voltar ao Menu</button>
+  </div>
+
+  <div id="lobby">
+    <h2>🌐 Batalha Online</h2>
+    <div id="lbMenu">
+      <button class="btn-green" id="btnCreate">🏠 Criar Sala</button>
+      <div class="sep">— ou entre com um código —</div>
+      <input id="iCode" type="text" placeholder="CÓDIGO DA SALA" maxlength="6">
+      <button class="btn-blue" id="btnJoin">🚀 Entrar na Sala</button>
+    </div>
+    <div id="lbWait" style="display:none; flex-direction:column; align-items:center; gap:10px;">
+      <p id="lbLabel">Código da sua sala — compartilhe:</p>
+      <div class="code-box" id="lbCode"></div>
+      <p class="status" id="lbStatus">⏳ Aguardando adversário...</p>
+    </div>
+    <div class="err" id="lbErr"></div>
+    <button class="btn-back" id="btnLobbyBack">← Voltar ao Menu</button>
+  </div>
+
+  <!-- Phaser creates its own canvas inside this container -->
+  <div id="game-container"></div>
+  <script type="module" src="/src/main.js"></script>
+</body>
+</html>
