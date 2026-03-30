@@ -16,7 +16,7 @@ import {
   updateAI, checkWin, spawnUnit, getCardLevel, getAllKeys, getCardScaled,
   currentTheme, currentDiff, setCurrentDiff, addXPtoCards,
   triggerShake, shakeAmt, shakeT, updateShake, resetShake,
-  rnd, rand, dst, makeTowers, setupThemeObstacles
+  rnd, rand, dst, makeTowers, setupThemeObstacles, getNextCard
 } from '../systems/BattleLogic.js';
 import { SFX, MUSIC, getAC, isMuted, setMuted } from '../systems/AudioSystem.js';
 import {
@@ -94,14 +94,30 @@ export default class GameScene extends Phaser.Scene {
     } catch (e) { this._analyser = null; }
 
     // ── Input ──
+    this._deckTouchStartY = null;
     this.input.on('pointermove', p => {
       this.mouseX = p.x; this.mouseY = p.y;
+      // Touch drag scroll for shop
+      if (APP.screen === 'shop' && this._shopTouchStartY !== null && p.isDown) {
+        this.shopScrollY = Math.max(0, this.shopScrollY - (p.y - this._shopTouchStartY));
+        this._shopTouchStartY = p.y;
+      }
+      // Touch drag scroll for deck select
+      if (APP.screen === 'deckSelect' && this._deckTouchStartY !== null && p.isDown) {
+        APP._deckScroll = Math.max(0, (APP._deckScroll || 0) - (p.y - this._deckTouchStartY));
+        this._deckTouchStartY = p.y;
+      }
     });
-    this.input.on('pointerdown', p => this.handleClick(p.x, p.y));
+    this.input.on('pointerdown', p => {
+      if (APP.screen === 'shop') this._shopTouchStartY = p.y;
+      if (APP.screen === 'deckSelect') this._deckTouchStartY = p.y;
+      this.handleClick(p.x, p.y);
+    });
     this.input.on('wheel', (ptr, gos, dx, dy) => {
       if (APP.screen === 'shop') this.shopScrollY = Math.max(0, this.shopScrollY + dy * 0.45);
+      if (APP.screen === 'deckSelect') APP._deckScroll = (APP._deckScroll || 0) + dy * 0.45;
     });
-    this.input.on('pointerup', () => { this._shopTouchStartY = null; });
+    this.input.on('pointerup', () => { this._shopTouchStartY = null; this._deckTouchStartY = null; });
     this.input.once('pointerdown', () => { try { getAC(); } catch(e){} });
 
     if (APP.screen === 'menu') { MUSIC.stop(); _gpUpdate('menu'); }
@@ -515,17 +531,31 @@ export default class GameScene extends Phaser.Scene {
     if (APP.screen === 'ranking') { if (my >= H-52) { SFX.click(); this.goScreen('menu'); } return; }
 
     if (APP.screen === 'shop') {
+      // Se popup aberto, lidar com cliques do popup
+      if (APP._shopPopup) {
+        this.shopBtn.forEach(b => {
+          if (mx >= b.x && mx <= b.x+b.w && my >= b.y && my <= b.y+b.h) {
+            SFX.click();
+            if (b.key === '__closePopup') { APP._shopPopup = null; return; }
+            const d = CARDS[b.key]; if (!d) return;
+            const owned = APP.progress.owned || [];
+            if (!owned.includes(b.key) && (APP.progress.diamonds||0) >= (d.shopCost||0)) {
+              APP.progress.diamonds -= d.shopCost;
+              APP.progress.owned = [...owned, b.key];
+              SFX.levelUp(); saveData(); fbSaveUser();
+              APP._shopPopup = null; // fecha popup apos comprar
+            }
+          }
+        });
+        return;
+      }
+      // Cliques normais da loja
       this.shopBtn.forEach(b => {
         if (mx >= b.x && mx <= b.x+b.w && my >= b.y && my <= b.y+b.h) {
           SFX.click();
           if (b.key === '__back') { this.goScreen('menu'); return; }
-          const d = CARDS[b.key]; if (!d) return;
-          const owned = APP.progress.owned || [];
-          if (!owned.includes(b.key) && (APP.progress.diamonds||0) >= (d.shopCost||0)) {
-            APP.progress.diamonds -= d.shopCost;
-            APP.progress.owned = [...owned, b.key];
-            SFX.levelUp(); saveData(); fbSaveUser();
-          }
+          // Abre popup com detalhes da carta
+          APP._shopPopup = b.key;
         }
       });
       return;
@@ -559,9 +589,11 @@ export default class GameScene extends Phaser.Scene {
         if (d && G.p1Elixir >= d.cost) {
           G.p1Elixir -= d.cost; spawnUnit(key, mx, my, 'player');
           if (APP.mode === 'online') sendOnlineDeploy(key, mx, my);
-          const _da = d.deckAdvance || 1;
-          G.p1Hand[G.p1Sel] = G.p1Deck[G.p1DeckIdx % G.p1Deck.length];
-          G.p1DeckIdx += _da; G.p1Sel = null;
+          // Próxima carta (cartas fortes aparecem menos)
+          const _next = getNextCard(G.p1Deck, G.p1DeckIdx);
+          G.p1Hand[G.p1Sel] = _next.key;
+          G.p1DeckIdx = _next.newIdx + ((d.deckAdvance || 1) - 1);
+          G.p1Sel = null;
         }
       }
     }

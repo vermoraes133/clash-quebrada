@@ -155,8 +155,8 @@ export function drawMenu(ctx, APP, mouseX, mouseY, soundMuted, currentDiff, menu
 // ══════════════════════════════════════════════════════════
 export function drawDeckSelect(ctx, APP, mouseX, mouseY, getAllKeys, getCardLevel, deckBtn) {
   deckBtn.length = 0;
+  if (APP._deckScroll === undefined) APP._deckScroll = 0;
 
-  // Fundo
   const bg = ctx.createLinearGradient(0, 0, 0, H);
   bg.addColorStop(0, '#0a0a20'); bg.addColorStop(1, '#060612');
   ctx.fillStyle = bg; ctx.fillRect(0, 0, W, H);
@@ -181,69 +181,83 @@ export function drawDeckSelect(ctx, APP, mouseX, mouseY, getAllKeys, getCardLeve
   ctx.fillStyle = '#fff'; ctx.font = 'bold 13px Arial'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
   ctx.fillText(APP.deckTimer >= 9999 ? '\u221E' : APP.deckTimer, rx, ry);
 
-  // Grid de cartas
+  // Grid com SCROLL
   const cols = 4, CW = 88, CH = 76, GAP = 6;
-  const totalW = cols * CW + (cols - 1) * GAP, startX = (W - totalW) / 2, startY = 68;
+  const totalW = cols * CW + (cols - 1) * GAP, startX = (W - totalW) / 2;
+  const GRID_TOP = 68, GRID_BOT = H - 55;
+  const viewH = GRID_BOT - GRID_TOP;
   const displayKeys = getAllKeys();
+  // Ordenar: selecionadas primeiro, depois por custo
+  const sortedKeys = [...displayKeys].sort((a, b) => {
+    const asel = APP.tmpDeck.includes(a) ? 0 : 1;
+    const bsel = APP.tmpDeck.includes(b) ? 0 : 1;
+    if (asel !== bsel) return asel - bsel;
+    return (CARDS[a]?.cost || 0) - (CARDS[b]?.cost || 0);
+  });
+  const rows = Math.ceil(sortedKeys.length / cols);
+  const totalContentH = rows * (CH + GAP);
+  const maxScroll = Math.max(0, totalContentH - viewH);
+  APP._deckScroll = Math.max(0, Math.min(maxScroll, APP._deckScroll));
+
   let hoveredCard = null;
 
-  displayKeys.forEach((key, i) => {
+  // Clip area
+  ctx.save(); ctx.beginPath(); ctx.rect(0, GRID_TOP, W, viewH); ctx.clip();
+
+  sortedKeys.forEach((key, i) => {
     const d = CARDS[key]; if (!d) return;
     const col = i % cols, row = Math.floor(i / cols);
-    const cx = startX + col * (CW + GAP), cy = startY + row * (CH + GAP);
+    const cx = startX + col * (CW + GAP);
+    const cy = GRID_TOP + row * (CH + GAP) - APP._deckScroll;
+    if (cy + CH < GRID_TOP - 2 || cy > GRID_BOT + 2) return;
+
     const isOwned = APP.progress.owned && APP.progress.owned.includes(key);
     const isLocked = d.locked && !isOwned;
     const sel = APP.tmpDeck.includes(key), lvl = getCardLevel(key);
     if (mouseX >= cx && mouseX <= cx + CW && mouseY >= cy && mouseY <= cy + CH) hoveredCard = key;
 
-    // Card background com gradiente
     const cardBg = ctx.createLinearGradient(cx, cy, cx, cy + CH);
     if (isLocked) { cardBg.addColorStop(0, '#0d0d16'); cardBg.addColorStop(1, '#080810'); }
     else if (sel) { cardBg.addColorStop(0, '#1a3a1a'); cardBg.addColorStop(1, '#0d1f0d'); }
     else { cardBg.addColorStop(0, '#18182a'); cardBg.addColorStop(1, '#0e0e1a'); }
     ctx.fillStyle = cardBg;
-
     if (sel) { ctx.shadowColor = '#27ae60'; ctx.shadowBlur = 8; }
     ctx.strokeStyle = isLocked ? '#1a1a2a' : sel ? '#27ae60' : '#2a2a3a'; ctx.lineWidth = sel ? 2.5 : 1;
     ctx.beginPath(); ctx.roundRect(cx, cy, CW, CH, 8); ctx.fill(); ctx.stroke();
     ctx.shadowBlur = 0;
-
     if (sel) { ctx.fillStyle = 'rgba(39,174,96,.1)'; ctx.beginPath(); ctx.roundRect(cx, cy, CW, CH, 8); ctx.fill(); }
 
-    // Personagem mini (em vez de emoji)
     ctx.globalAlpha = isLocked ? .25 : (sel ? 1 : .85);
     drawCharacter(ctx, cx + CW/2, cy + 22, key, 'player', 10);
     ctx.globalAlpha = 1;
 
-    // Nome
     const fs = d.name.length > 10 ? 6.5 : 7.5;
     ctx.fillStyle = isLocked ? '#444' : '#ccc'; ctx.font = `${fs}px Arial`;
     ctx.textAlign = 'center'; ctx.textBaseline = 'top';
     ctx.fillText(d.name, cx + CW/2, cy + 38);
 
-    // Custo badge
     ctx.fillStyle = '#6c3483'; ctx.beginPath(); ctx.arc(cx + 11, cy + 11, 9, 0, Math.PI * 2); ctx.fill();
     ctx.fillStyle = '#fff'; ctx.font = 'bold 9px Arial'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
     ctx.fillText(d.cost, cx + 11, cy + 11);
 
-    // Level badge
     if (lvl > 1 && !isLocked) {
       ctx.fillStyle = '#f1c40f'; ctx.beginPath(); ctx.arc(cx + CW - 11, cy + 11, 9, 0, Math.PI * 2); ctx.fill();
       ctx.fillStyle = '#000'; ctx.font = 'bold 7px Arial'; ctx.fillText('Lv' + lvl, cx + CW - 11, cy + 11);
     }
-
-    // Check mark
-    if (sel) {
-      ctx.fillStyle = '#2ecc71'; ctx.font = '16px Arial'; ctx.fillText('\u2713', cx + CW - 14, cy + CH - 14);
-    }
-
-    // Lock
-    if (isLocked) {
-      ctx.font = '16px Arial'; ctx.fillText('\u{1F512}', cx + CW/2, cy + CH/2);
-    }
-
+    if (sel) { ctx.fillStyle = '#2ecc71'; ctx.font = '16px Arial'; ctx.fillText('\u2713', cx + CW - 14, cy + CH - 14); }
+    if (isLocked) { ctx.font = '16px Arial'; ctx.fillText('\u{1F512}', cx + CW/2, cy + CH/2); }
     if (!isLocked) deckBtn.push({ x: cx, y: cy, w: CW, h: CH, key });
   });
+  ctx.restore();
+
+  // Scrollbar
+  if (maxScroll > 0) {
+    const frac = APP._deckScroll / maxScroll;
+    const sbH = Math.max(20, viewH * (viewH / totalContentH));
+    const sbY = GRID_TOP + (viewH - sbH) * frac;
+    ctx.fillStyle = 'rgba(255,255,255,.05)'; ctx.beginPath(); ctx.roundRect(W - 6, GRID_TOP, 4, viewH, 2); ctx.fill();
+    ctx.fillStyle = 'rgba(241,196,15,.4)'; ctx.beginPath(); ctx.roundRect(W - 6, sbY, 4, sbH, 2); ctx.fill();
+  }
 
   // Confirm button
   const rdy = APP.tmpDeck.length >= 1;
@@ -612,6 +626,88 @@ export function drawShop(ctx, APP, shopScrollY, shopBtn, mouseX, mouseY) {
   // Voltar
   _drawStyledBtn(ctx, W/2 - 70, H - 39, 140, 32, '#2c3e50', '\u2190 Voltar');
   shopBtn.push({ x: W/2 - 70, y: H - 39, w: 140, h: 32, key: '__back' });
+
+  // ── POPUP detalhado da carta ──
+  if (APP._shopPopup) {
+    const pk = APP._shopPopup;
+    const d = CARDS[pk]; if (!d) { APP._shopPopup = null; return; }
+    const owned = (APP.progress.owned || []).includes(pk);
+    const canBuy = !owned && (APP.progress.diamonds || 0) >= (d.shopCost || 0);
+    const isLeg = !!d.legendary;
+
+    // Overlay escuro
+    ctx.fillStyle = 'rgba(0,0,0,.85)'; ctx.fillRect(0, 0, W, H);
+
+    // Modal
+    const mx = 30, my = 80, mw = W - 60, mh = 500;
+    const mbg = ctx.createLinearGradient(mx, my, mx, my + mh);
+    mbg.addColorStop(0, isLeg ? '#2a1800' : '#0f1428'); mbg.addColorStop(1, isLeg ? '#150c00' : '#080c18');
+    ctx.fillStyle = mbg;
+    ctx.beginPath(); ctx.roundRect(mx, my, mw, mh, 16); ctx.fill();
+    ctx.strokeStyle = isLeg ? '#ffd700' : '#3498db'; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.roundRect(mx, my, mw, mh, 16); ctx.stroke();
+
+    // Emoji grande
+    ctx.font = '48px Arial'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText(d.emoji, W/2, my + 50);
+
+    // Nome
+    ctx.fillStyle = isLeg ? '#ffd700' : '#fff'; ctx.font = 'bold 22px Arial';
+    ctx.fillText(d.name, W/2, my + 90);
+
+    if (isLeg) {
+      ctx.fillStyle = '#ffd700'; ctx.font = 'bold 10px Arial';
+      ctx.fillText('\u2B50 CARTA LENDARIA \u2B50', W/2, my + 112);
+    }
+
+    // Tipo
+    const typeLabel = d.type === 'melee' ? '\u2694\uFE0F Corpo-a-corpo' : d.type === 'ranged' ? '\u{1F3AF} A distancia' : '\u{1F4A5} Magia';
+    ctx.fillStyle = '#888'; ctx.font = '13px Arial';
+    ctx.fillText(typeLabel + '  \u2022  Custo: ' + d.cost + ' elixir', W/2, my + 135);
+
+    // Descricao
+    ctx.fillStyle = '#ccc'; ctx.font = '14px Arial';
+    const descWords = d.desc.split(' '); let descLine = '', descY = my + 165;
+    descWords.forEach(w => {
+      const test = descLine + w + ' ';
+      if (ctx.measureText(test).width > mw - 40 && descLine) { ctx.fillText(descLine.trim(), W/2, descY); descLine = w + ' '; descY += 20; }
+      else descLine = test;
+    });
+    ctx.fillText(descLine.trim(), W/2, descY);
+
+    // Stats detalhados
+    if (d.type !== 'spell') {
+      const sy = descY + 35;
+      ctx.fillStyle = 'rgba(255,255,255,.06)'; ctx.beginPath(); ctx.roundRect(mx + 15, sy - 5, mw - 30, 85, 8); ctx.fill();
+      ctx.fillStyle = '#ecf0f1'; ctx.font = '13px Arial'; ctx.textAlign = 'left';
+      ctx.fillText(`\u2764\uFE0F Vida: ${d.hp}`, mx + 30, sy + 10);
+      ctx.fillText(`\u2694\uFE0F Dano: ${d.dmg}`, mx + 30, sy + 30);
+      ctx.fillText(`\u{1F4A8} Velocidade: ${d.spd}`, mx + 30, sy + 50);
+      ctx.textAlign = 'right';
+      ctx.fillText(`\u{1F4CF} Alcance: ${d.range}`, mx + mw - 30, sy + 10);
+      ctx.fillText(`\u26A1 Atk/s: ${d.atkRate}`, mx + mw - 30, sy + 30);
+      if (d.special) ctx.fillText(`\u2728 Especial: ${d.special}`, mx + mw - 30, sy + 50);
+      ctx.textAlign = 'center';
+    } else {
+      const sy = descY + 35;
+      ctx.fillStyle = '#ecf0f1'; ctx.font = '14px Arial';
+      ctx.fillText(`\u{1F4A5} Dano: ${d.dmg}  \u2022  \u{1F4CF} Area: ${d.aoe}`, W/2, sy + 10);
+    }
+
+    // Botao comprar/fechar
+    const btnPopY = my + mh - 70;
+    if (owned) {
+      _drawStyledBtn(ctx, W/2 - 90, btnPopY, 180, 40, '#27ae60', '\u2705 Voce ja possui!');
+    } else if (canBuy) {
+      _drawStyledBtn(ctx, W/2 - 90, btnPopY, 180, 40, '#7b2fbe', `Comprar ${d.shopCost}\u{1F48E}`);
+      shopBtn.push({ x: W/2 - 90, y: btnPopY, w: 180, h: 40, key: pk });
+    } else {
+      _drawStyledBtn(ctx, W/2 - 90, btnPopY, 180, 40, '#444', `${d.shopCost}\u{1F48E} (sem diamantes)`);
+    }
+    // Fechar
+    _drawStyledBtn(ctx, W/2 - 60, btnPopY + 48, 120, 32, '#2c3e50', 'Fechar');
+    shopBtn.push({ x: W/2 - 60, y: btnPopY + 48, w: 120, h: 32, key: '__closePopup' });
+  }
 }
 
 // ══════════════════════════════════════════════════════════

@@ -124,10 +124,33 @@ export function newBattle(p1DeckOverride, p2DeckOverride) {
   currentTheme = ARENA_THEMES[Math.floor(Math.random() * ARENA_THEMES.length)];
   MUSIC.setTheme(currentTheme);
   setupThemeObstacles();
+  // Mão inicial embaralhada (não repete as mesmas cartas na mesma ordem)
+  const _shP1 = shuffleArr([...pd]);
+  const _shP2 = shuffleArr([...ed]);
   for (let i = 0; i < 4; i++) {
-    G.p1Hand.push(G.p1Deck[i % G.p1Deck.length]);
-    G.p2Hand.push(G.p2Deck[i % G.p2Deck.length]);
+    G.p1Hand.push(_shP1[i % _shP1.length]);
+    G.p2Hand.push(_shP2[i % _shP2.length]);
   }
+  // Embaralha a ordem do deck para rotação mais variada
+  G.p1Deck = shuffleArr([...pd]);
+  G.p2Deck = shuffleArr([...ed]);
+}
+
+// Próxima carta do deck — cartas caras (cost>=5) aparecem com menos frequência
+export function getNextCard(deck, deckIdx) {
+  let attempts = 0;
+  while (attempts < 3) {
+    const key = deck[deckIdx % deck.length];
+    const d = CARDS[key];
+    deckIdx++;
+    attempts++;
+    // Cartas caras: 40% de chance de pular (redistribui)
+    if (d && d.cost >= 5 && Math.random() < 0.4 && attempts < 3) continue;
+    // Lendárias: 60% de chance de pular
+    if (d && d.legendary && Math.random() < 0.6 && attempts < 3) continue;
+    return { key, newIdx: deckIdx };
+  }
+  return { key: deck[deckIdx % deck.length], newIdx: deckIdx + 1 };
 }
 
 // ── Card scaling ─────────────────────────────────────────────
