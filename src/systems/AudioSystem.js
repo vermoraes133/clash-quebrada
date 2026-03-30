@@ -53,18 +53,110 @@ function nos(hz, type, v, d, dest) {
   } catch (e) {}
 }
 
+// ── Pitch randomization helper (±10%) ──
+function _rPitch(f) { return f * (0.9 + Math.random() * 0.2); }
+
+// ── Stereo panner helper (x: 0-420 mapped to -1..1) ──
+function _pan(x) {
+  if (soundMuted) return null;
+  try {
+    const a = getAC();
+    const p = a.createStereoPanner();
+    p.pan.value = Math.max(-1, Math.min(1, (x - 210) / 210));
+    p.connect(a.destination);
+    return p;
+  } catch(e) { return null; }
+}
+
+// ── FM synthesis helper (richer timbres) ──
+function fmOsc(carrierF, modF, modDepth, vol, dur) {
+  if (soundMuted) return;
+  try {
+    const a = getAC();
+    const carrier = a.createOscillator();
+    const modulator = a.createOscillator();
+    const modGain = a.createGain();
+    const outGain = a.createGain();
+    modulator.frequency.value = modF;
+    modGain.gain.value = modDepth;
+    modulator.connect(modGain);
+    modGain.connect(carrier.frequency);
+    carrier.frequency.value = carrierF;
+    carrier.connect(outGain);
+    outGain.connect(a.destination);
+    outGain.gain.setValueAtTime(vol, a.currentTime);
+    outGain.gain.exponentialRampToValueAtTime(0.0001, a.currentTime + dur);
+    carrier.start(); modulator.start();
+    carrier.stop(a.currentTime + dur + .02);
+    modulator.stop(a.currentTime + dur + .02);
+  } catch(e) {}
+}
+
+// ── Karplus-Strong (plucked string) ──
+function pluck(freq, vol, dur) {
+  if (soundMuted) return;
+  try {
+    const a = getAC();
+    const bufSize = Math.round(a.sampleRate / freq);
+    const buf = a.createBuffer(1, a.sampleRate * dur, a.sampleRate);
+    const data = buf.getChannelData(0);
+    // Fill initial with noise
+    for (let i = 0; i < bufSize; i++) data[i] = (Math.random() * 2 - 1) * vol;
+    // Karplus-Strong loop
+    for (let i = bufSize; i < data.length; i++) {
+      data[i] = (data[i - bufSize] + data[i - bufSize + 1]) * 0.498; // slight decay
+    }
+    const src = a.createBufferSource();
+    src.buffer = buf;
+    const g = a.createGain();
+    g.gain.value = vol;
+    src.connect(g); g.connect(a.destination);
+    src.start(); src.stop(a.currentTime + dur);
+  } catch(e) {}
+}
+
 export const SFX = {
   select() { osc(1200, 'sine', .1, .06); osc(1800, 'sine', .04, .04); },
   deploy() { osc(180, 'sine', .22, .1, 500); setTimeout(() => osc(580, 'sine', .28, .09, 280), 75); },
-  shoot() { osc(820, 'square', .07, .07, 180); nos(3500, 'bandpass', .04, .05); },
-  hit() { const n = Date.now(); if (n - _lHit < 65) return; _lHit = n; nos(280, 'bandpass', .42, .1); osc(100, 'sine', .24, .07, 50); },
-  towerHit() { osc(260, 'triangle', .28, .38, 130); osc(390, 'triangle', .12, .22, 195); nos(2200, 'bandpass', .08, .12); },
-  towerDown() { nos(75, 'lowpass', 1.3, .9); osc(52, 'sine', .7, .55, 16); osc(85, 'sine', .42, .38, 32); setTimeout(() => nos(180, 'lowpass', .45, .5), 110); },
+  shoot() { osc(_rPitch(820), 'square', .07, .07, 180); nos(3500, 'bandpass', .04, .05); },
+  // 3 hit variations with pitch randomization
+  hit() {
+    const n = Date.now(); if (n - _lHit < 65) return; _lHit = n;
+    const v = Math.floor(Math.random() * 3);
+    if (v === 0) { nos(_rPitch(280), 'bandpass', .42, .1); osc(_rPitch(100), 'sine', .24, .07, 50); }
+    else if (v === 1) { nos(_rPitch(350), 'bandpass', .38, .12); osc(_rPitch(120), 'sine', .2, .08, 60); }
+    else { nos(_rPitch(220), 'bandpass', .45, .09); osc(_rPitch(80), 'triangle', .22, .06, 40); }
+  },
+  towerHit() { osc(_rPitch(260), 'triangle', .28, .38, 130); osc(_rPitch(390), 'triangle', .12, .22, 195); nos(2200, 'bandpass', .08, .12); },
+  towerDown() {
+    nos(75, 'lowpass', 1.3, .9); osc(52, 'sine', .7, .55, 16); osc(85, 'sine', .42, .38, 32);
+    setTimeout(() => nos(180, 'lowpass', .45, .5), 110);
+    // Extra rumble with FM
+    fmOsc(40, 7, 200, .3, .6);
+  },
+  towerCrack() { nos(_rPitch(400), 'highpass', .15, .08); osc(_rPitch(150), 'sawtooth', .1, .05, 80); },
   spell() { nos(180, 'lowpass', .55, .38); osc(75, 'sine', .42, .32, 32); setTimeout(() => { nos(100, 'lowpass', .85, .52); osc(50, 'sine', .6, .44, 18); }, 145); },
+  stunHit() { fmOsc(800, 200, 400, .15, .12); osc(1500, 'square', .06, .04, 2000); },
+  healCast() { pluck(523, .15, .3); setTimeout(() => pluck(659, .12, .25), 80); setTimeout(() => pluck(784, .1, .2), 160); },
+  buffCast() { osc(440, 'triangle', .12, .2, 880); osc(660, 'triangle', .08, .15, 1320); },
+  combo() { [660, 880, 1100, 1320].forEach((f, i) => setTimeout(() => osc(f, 'sine', .12 - i*.02, .15), i * 40)); },
+  crowd() { nos(300, 'bandpass', .08, .6); nos(500, 'bandpass', .05, .5); },
   win() { [[523, 'triangle', .28], [659, 'triangle', .28], [784, 'triangle', .28], [1047, 'triangle', .32]].forEach(([f, t, v], i) => setTimeout(() => osc(f, t, v, .55), i * 135)); setTimeout(() => { osc(523, 'sine', .18, .7); osc(659, 'sine', .18, .7); osc(784, 'sine', .18, .7); }, 610); },
   lose() { [[392, 'sawtooth', .2], [330, 'sawtooth', .2], [277, 'sawtooth', .2], [220, 'sawtooth', .22]].forEach(([f, t, v], i) => setTimeout(() => osc(f, t, v, .44), i * 225)); },
   click() { osc(800, 'sine', .08, .06, 600); },
   levelUp() { [523, 659, 784, 1047].forEach((f, i) => setTimeout(() => osc(f, 'triangle', .25, .3), i * 80)); },
+  // Spatial hit (with panning based on x position)
+  hitAt(x) {
+    const n = Date.now(); if (n - _lHit < 65) return; _lHit = n;
+    const dest = _pan(x);
+    if (dest) { nos(280, 'bandpass', .42, .1, dest); osc(100, 'sine', .24, .07, 50, dest); }
+    else { nos(280, 'bandpass', .42, .1); osc(100, 'sine', .24, .07, 50); }
+  },
+  // Footstep (subtle, varied)
+  footstep() {
+    if (Math.random() > 0.08) return; // Only play occasionally
+    nos(_rPitch(1200), 'highpass', .02, .03);
+  },
 };
 
 // ── Musica procedural (funk/baiao 2.0 — 145 BPM, 3 niveis de intensidade) ──
@@ -228,7 +320,7 @@ export const MUSIC = (() => {
       started = true; intensity = 0; boot(); nextT = a().currentTime + .1; step = 0; schedule();
     },
     stop() { started = false; if (timer) { clearTimeout(timer); timer = null; } },
-    setIntensity(v) { intensity = Math.max(0, Math.min(2, v | 0)); },
+    setIntensity(v) { intensity = Math.max(0, Math.min(3, v | 0)); },
     setTheme(t) {
       _tcfg = THEME_CFG[t] || THEME_CFG.favela;
       BPM = _tcfg.bpm; S = 60 / BPM / 4;
@@ -236,3 +328,44 @@ export const MUSIC = (() => {
     syncMute() { if (!master) { if (!soundMuted) this.start(); return; } master.gain.linearRampToValueAtTime(soundMuted ? 0 : .42, a().currentTime + .3); if (!soundMuted && !started) this.start(); },
   };
 })();
+
+// ══════════════════════════════════════════════════════════
+//  AMBIENCE — background sounds per arena theme
+// ══════════════════════════════════════════════════════════
+let _ambTimer = null, _ambPlaying = false;
+
+export function startAmbience(theme) {
+  stopAmbience();
+  if (soundMuted) return;
+  _ambPlaying = true;
+
+  function loop() {
+    if (!_ambPlaying || soundMuted) return;
+    try {
+      if (theme === 'bosque') {
+        // Grilos + passaros
+        nos(4000 + Math.random() * 2000, 'bandpass', .02, .3 + Math.random() * .2);
+        if (Math.random() < .3) pluck(800 + Math.random() * 400, .03, .15); // bird chirp
+      } else if (theme === 'predio') {
+        // Carros distantes + buzina
+        nos(150 + Math.random() * 100, 'lowpass', .015, .8);
+        if (Math.random() < .1) osc(350 + Math.random() * 50, 'sine', .02, .3, 300);
+      } else if (theme === 'favela') {
+        // Funk distante + cachorros
+        if (Math.random() < .2) nos(200, 'lowpass', .02, .4);
+        if (Math.random() < .08) osc(300 + Math.random() * 200, 'sawtooth', .01, .15, 200);
+      } else if (theme === 'rua') {
+        // Vento + lata rolando
+        nos(800, 'bandpass', .015, .5);
+        if (Math.random() < .1) nos(2000 + Math.random() * 1000, 'highpass', .01, .08);
+      }
+    } catch(e) {}
+    _ambTimer = setTimeout(loop, 2000 + Math.random() * 3000);
+  }
+  _ambTimer = setTimeout(loop, 500);
+}
+
+export function stopAmbience() {
+  _ambPlaying = false;
+  if (_ambTimer) { clearTimeout(_ambTimer); _ambTimer = null; }
+}
