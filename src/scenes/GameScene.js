@@ -212,31 +212,12 @@ export default class GameScene extends Phaser.Scene {
     out.imageSmoothingQuality = 'high';
     out.drawImage(this._cv, 0, 0, RW, RH, 0, 0, W, H);
 
-    // ── Pass 3: Bloom (battle only) ──
+    // ── Pass 3: Bloom SUTIL (battle only) ──
     if (APP.screen === 'battle') {
       this._applyBloom(out);
     }
 
-    // ── Pass 4: Vignette dinâmica (pulsa com música) ──
-    if (APP.screen === 'battle') {
-      const vigStr = 0.5 + bassLevel * 0.15;
-      const vg = out.createRadialGradient(W/2, H/2, W * 0.2, W/2, H/2, W * 0.7);
-      vg.addColorStop(0, 'rgba(0,0,0,0)');
-      vg.addColorStop(1, `rgba(0,0,0,${vigStr})`);
-      out.fillStyle = vg; out.fillRect(0, 0, W, H);
-    }
-
-    // ── Pass 5: Color grading por tema ──
-    if (APP.screen === 'battle') {
-      this._applyColorGrade(out, currentTheme);
-    }
-
-    // ── Pass 6: Film grain ──
-    if (APP.screen === 'battle') {
-      this._applyFilmGrain(out, dt);
-    }
-
-    // ── Pass 7: Cinematic bars ──
+    // ── Pass 4: Cinematic bars ──
     if (this.cineBar > 0.5) {
       const barH = this.cineBar;
       out.fillStyle = '#000';
@@ -244,16 +225,7 @@ export default class GameScene extends Phaser.Scene {
       out.fillRect(0, H - barH, W, barH);
     }
 
-    // ── Pass 8: Temporal AA (blend with previous frame) ──
-    if (APP.screen === 'battle') {
-      out.globalAlpha = 0.12;
-      out.drawImage(this._prevFrame, 0, 0);
-      out.globalAlpha = 1;
-    }
-
-    // ── Store frame for temporal AA ──
-    this._prevCtx.clearRect(0, 0, W, H);
-    this._prevCtx.drawImage(this._outCv, 0, 0);
+    // (Temporal AA and film grain removed — they caused haze)
 
     // ── Refresh Phaser texture ──
     const tex = this.textures.get('frame');
@@ -402,23 +374,21 @@ export default class GameScene extends Phaser.Scene {
     if (!bc) return;
     const bw = this._bloomCv.width, bh = this._bloomCv.height;
 
-    // Downscale + brightness threshold (only bright pixels)
+    // Downscale + extract only very bright pixels
     bc.clearRect(0, 0, bw, bh);
-    bc.filter = 'brightness(1.8) contrast(2)';
+    bc.filter = 'brightness(2.5) contrast(3)';
     bc.drawImage(this._outCv, 0, 0, W, H, 0, 0, bw, bh);
     bc.filter = 'none';
 
-    // Blur
-    bc.filter = 'blur(6px)';
-    bc.drawImage(this._bloomCv, 0, 0);
+    // Single blur pass (lighter = less haze)
     bc.filter = 'blur(4px)';
     bc.drawImage(this._bloomCv, 0, 0);
     bc.filter = 'none';
 
-    // Composite with additive blending
+    // Very subtle additive composite
     out.save();
     out.globalCompositeOperation = 'lighter';
-    out.globalAlpha = 0.25;
+    out.globalAlpha = 0.1;
     out.drawImage(this._bloomCv, 0, 0, bw, bh, 0, 0, W, H);
     out.globalAlpha = 1;
     out.globalCompositeOperation = 'source-over';
